@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { AppError } from "../lib/app-error.js";
 import { OrdersService } from "../services/orders/orders.service.js";
+import { PaymentsService } from "../services/payments/payments.service.js";
 
 const router = Router();
 const ordersService = new OrdersService();
+const paymentsService = new PaymentsService();
 
 router.post("/", async (req, res, next) => {
   try {
@@ -83,6 +85,20 @@ router.post("/:id/start", async (req, res, next) => {
   try {
     const order = await ordersService.startOrder(req.params.id);
     res.status(200).json(order);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/pay", async (req, res, next) => {
+  try {
+    const paymentRequirement = await paymentsService.createPaymentRequirement(
+      req.params.id
+    );
+    res.status(200).json({
+      status: "PAYMENT_REQUIRED",
+      payment: paymentRequirement
+    });
   } catch (error) {
     next(error);
   }
