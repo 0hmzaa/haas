@@ -1,6 +1,7 @@
 import { HcsEventType } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { prisma } from "../../lib/prisma.js";
+import { HederaRuntimeService } from "./hedera-runtime.service.js";
 
 export type HcsLifecycleEvent =
   | "order.created"
@@ -42,17 +43,33 @@ export type PublishHcsEventInput = {
 };
 
 export class HcsAuditService {
+  private readonly hederaRuntime = new HederaRuntimeService();
+
   async publishEvent(input: PublishHcsEventInput) {
+    const compactMessage = {
+      eventType: input.eventType,
+      orderId: input.orderId,
+      actorId: input.actorId,
+      timestamp: new Date().toISOString(),
+      proofHash: input.proofHash,
+      storageRef: input.storageRef,
+      resolution: input.resolution,
+      txId: input.txId,
+      nonce: input.nonce ?? randomUUID()
+    };
+
+    const hcsSubmit = await this.hederaRuntime.submitHcsMessage(compactMessage);
+
     const payload = input.payload
       ? {
-          eventType: input.eventType,
-          orderId: input.orderId,
-          actorId: input.actorId,
-          txId: input.txId,
-          nonce: input.nonce ?? randomUUID(),
-          ...input.payload
+          ...input.payload,
+          hcsTopicId: hcsSubmit?.topicId ?? null,
+          hcsSubmissionTxId: hcsSubmit?.txId ?? null
         }
-      : undefined;
+      : {
+          hcsTopicId: hcsSubmit?.topicId ?? null,
+          hcsSubmissionTxId: hcsSubmit?.txId ?? null
+        };
 
     return prisma.hcsEvent.create({
       data: {
@@ -62,8 +79,8 @@ export class HcsAuditService {
         proofHash: input.proofHash,
         storageRef: input.storageRef,
         resolution: input.resolution,
-        txId: input.txId,
-        nonce: input.nonce ?? randomUUID(),
+        txId: input.txId ?? hcsSubmit?.txId,
+        nonce: compactMessage.nonce,
         payload
       }
     });
