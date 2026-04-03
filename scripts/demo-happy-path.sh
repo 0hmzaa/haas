@@ -49,9 +49,10 @@ create_verified_worker() {
   local label="$1"
   local session_id="session-${label}-$(date +%s)-$RANDOM"
   local nullifier_hash="nullifier-${label}-$(date +%s)-$RANDOM"
+  local wallet_address="0.0.$((100000 + RANDOM))"
 
   local verified
-  verified="$(post_json '/api/world/verify' "{\"session_id\":\"${session_id}\",\"nullifier_hash\":\"${nullifier_hash}\",\"proof\":{\"valid\":true}}")"
+  verified="$(post_json '/api/world/verify' "{\"session_id\":\"${session_id}\",\"nullifier_hash\":\"${nullifier_hash}\",\"walletAddress\":\"${wallet_address}\",\"proof\":{\"valid\":true}}")"
 
   local verified_human_id
   verified_human_id="$(printf '%s' "$verified" | json_get 'verifiedHumanId')"

@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
+import { getHederaConfig } from "../../config/hedera.config.js";
 
 export type WorkerListQuery = {
   country?: string;
@@ -31,6 +32,10 @@ export type UpdateWorkerInput = Omit<CreateWorkerInput, "verifiedHumanId" | "dis
   baseRate?: string;
   reviewerEligible?: boolean;
 };
+
+function isHederaAccountId(value: string): boolean {
+  return /^\d+\.\d+\.\d+$/.test(value);
+}
 
 function formatWorker(worker: {
   id: string;
@@ -64,6 +69,8 @@ function formatWorker(worker: {
 }
 
 export class WorkersService {
+  private readonly hederaConfig = getHederaConfig();
+
   async createWorker(input: CreateWorkerInput) {
     const human = await prisma.verifiedHuman.findUnique({
       where: { id: input.verifiedHumanId }
@@ -71,6 +78,16 @@ export class WorkersService {
 
     if (!human || !human.worldVerified) {
       throw new AppError("verifiedHumanId must reference a World-verified human", 400);
+    }
+
+    if (
+      this.hederaConfig.enabled &&
+      (!human.walletAddress || !isHederaAccountId(human.walletAddress))
+    ) {
+      throw new AppError(
+        "Hedera-enabled mode requires a valid worker walletAddress (example: 0.0.1234)",
+        400
+      );
     }
 
     const worker = await prisma.workerProfile.create({

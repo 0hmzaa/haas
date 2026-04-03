@@ -4,6 +4,7 @@
 - Start PostgreSQL and app services (for example via Docker Compose).
 - Ensure API is reachable on `http://localhost:4000`.
 - Set `HEDERA_SCHEDULE_ADMIN_KEY` in environment (required for review timeout schedules).
+- If `HEDERA_ENABLED=true`, configure operator/topic envs and ensure workers are onboarded with Hedera-style `walletAddress` (format `0.0.x`).
 
 ## 2. Quality Gate Before Demo
 Run:
@@ -42,7 +43,7 @@ pnpm demo:happy-path auto
 - Branch handling:
   - `approve`: direct approval path
   - `dispute`: opens dispute + submits majority reviewer votes
-  - `auto`: leaves order in review window for timeout handling
+  - `auto`: leaves order in review window for timeout handling (auto-release finalization is expected from Hedera schedule execution webhook)
 - Audit timeline fetch (`/api/orders/:id/audit`)
 
 ## 5. Manual Checks
