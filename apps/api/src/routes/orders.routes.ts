@@ -1,7 +1,8 @@
-import { Prisma } from "@prisma/client";
+import { DisputeResolution, Prisma } from "@prisma/client";
 import { Router } from "express";
 import multer from "multer";
 import { AppError } from "../lib/app-error.js";
+import { DisputesService } from "../services/disputes/disputes.service.js";
 import { OrdersService } from "../services/orders/orders.service.js";
 import { PaymentsService } from "../services/payments/payments.service.js";
 import { ProofService } from "../services/proof/proof.service.js";
@@ -12,6 +13,7 @@ const ordersService = new OrdersService();
 const paymentsService = new PaymentsService();
 const proofService = new ProofService();
 const settlementService = new SettlementService();
+const disputesService = new DisputesService();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -181,6 +183,71 @@ router.post("/:id/approve", async (req, res, next) => {
     const actorId =
       typeof req.body?.actorId === "string" ? req.body.actorId : undefined;
     const result = await settlementService.approveOrder(req.params.id, actorId);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/dispute", async (req, res, next) => {
+  try {
+    if (typeof req.body?.reasonCode !== "string" || req.body.reasonCode.length === 0) {
+      throw new AppError("reasonCode is required", 400);
+    }
+
+    if (
+      typeof req.body?.clientStatement !== "string" ||
+      req.body.clientStatement.length === 0
+    ) {
+      throw new AppError("clientStatement is required", 400);
+    }
+
+    const dispute = await disputesService.openDispute(req.params.id, {
+      reasonCode: req.body.reasonCode,
+      clientStatement: req.body.clientStatement,
+      workerStatement:
+        typeof req.body?.workerStatement === "string"
+          ? req.body.workerStatement
+          : undefined,
+      actorId: typeof req.body?.actorId === "string" ? req.body.actorId : undefined
+    });
+
+    res.status(201).json(dispute);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/dispute", async (req, res, next) => {
+  try {
+    const dispute = await disputesService.getDispute(req.params.id);
+    res.status(200).json(dispute);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/dispute/vote", async (req, res, next) => {
+  try {
+    if (typeof req.body?.reviewerId !== "string" || req.body.reviewerId.length === 0) {
+      throw new AppError("reviewerId is required", 400);
+    }
+
+    if (
+      typeof req.body?.vote !== "string" ||
+      !Object.values(DisputeResolution).includes(req.body.vote as DisputeResolution)
+    ) {
+      throw new AppError(
+        "vote is required and must be RELEASE_TO_WORKER, REFUND_CLIENT, or SPLIT_PAYMENT",
+        400
+      );
+    }
+
+    const result = await disputesService.submitReviewerVote(req.params.id, {
+      reviewerId: req.body.reviewerId,
+      vote: req.body.vote as DisputeResolution
+    });
+
     res.status(200).json(result);
   } catch (error) {
     next(error);

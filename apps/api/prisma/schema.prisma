@@ -180,6 +180,7 @@ model DisputeCase {
   reasonCode      String
   clientStatement String
   workerStatement String?
+  assignedReviewerIds Json?
   status          DisputeStatus     @default(OPEN)
   resolution      DisputeResolution?
   resolvedAt      DateTime?
