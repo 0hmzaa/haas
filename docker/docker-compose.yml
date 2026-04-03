@@ -1,0 +1,62 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: haas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-haas}
+      POSTGRES_USER: ${POSTGRES_USER:-haas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-haas}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-haas} -d ${POSTGRES_DB:-haas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../
+      dockerfile: docker/api.Dockerfile
+    container_name: haas-api
+    restart: unless-stopped
+    env_file:
+      - ../.env.example
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: ${DATABASE_URL:-postgresql://haas:haas@postgres:5432/haas?schema=public}
+      PROOF_STORAGE_ROOT: /storage/proofs
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../storage/proofs:/storage/proofs
+    command: ["pnpm", "--filter", "api", "dev"]
+
+  web:
+    build:
+      context: ../
+      dockerfile: docker/web.Dockerfile
+    container_name: haas-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      API_BASE_URL: http://api:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+    command: ["pnpm", "--filter", "web", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+
+volumes:
+  postgres-data:
