@@ -5,11 +5,13 @@ import { AppError } from "../lib/app-error.js";
 import { OrdersService } from "../services/orders/orders.service.js";
 import { PaymentsService } from "../services/payments/payments.service.js";
 import { ProofService } from "../services/proof/proof.service.js";
+import { SettlementService } from "../services/settlement/settlement.service.js";
 
 const router = Router();
 const ordersService = new OrdersService();
 const paymentsService = new PaymentsService();
 const proofService = new ProofService();
+const settlementService = new SettlementService();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -169,6 +171,17 @@ router.get("/:id/proof", async (req, res, next) => {
   try {
     const proofs = await proofService.getProofs(req.params.id);
     res.status(200).json({ items: proofs, count: proofs.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/approve", async (req, res, next) => {
+  try {
+    const actorId =
+      typeof req.body?.actorId === "string" ? req.body.actorId : undefined;
+    const result = await settlementService.approveOrder(req.params.id, actorId);
+    res.status(200).json(result);
   } catch (error) {
     next(error);
   }
