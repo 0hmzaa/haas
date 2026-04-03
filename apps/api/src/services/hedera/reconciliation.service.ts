@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
 import { HcsAuditService } from "./hcs-audit.service.js";
 import { ReputationService } from "../reputation/reputation.service.js";
+import { getHederaConfig } from "../../config/hedera.config.js";
 
 const EVENT_LABELS: Record<HcsEventType, string> = {
   order_created: "order.created",
@@ -28,9 +29,147 @@ export type HederaWebhookPayload = {
   sequence?: string;
 };
 
+type MirrorTransactionRecord = {
+  consensus_timestamp: string;
+  name: string;
+  result: string;
+  transaction_id: string;
+  entity_id?: string;
+};
+
+type MirrorTransactionsResponse = {
+  transactions?: MirrorTransactionRecord[];
+};
+
+type MirrorTopicMessageRecord = {
+  consensus_timestamp: string;
+  message: string;
+  payer_account_id: string;
+  running_hash: string;
+  sequence_number: number;
+};
+
+type MirrorTopicMessagesResponse = {
+  messages?: MirrorTopicMessageRecord[];
+};
+
+type MirrorLifecycleMessage = {
+  eventType?: string;
+  orderId?: string;
+  txId?: string;
+  nonce?: string;
+  timestamp?: string;
+};
+
+type MirrorTransactionView = {
+  txId: string;
+  consensusTimestamp: string;
+  result: string;
+  name: string;
+  entityId: string | null;
+};
+
+type MirrorTopicMessageView = {
+  sequenceNumber: number;
+  consensusTimestamp: string;
+  payerAccountId: string;
+  eventType: string | null;
+  txId: string | null;
+  nonce: string | null;
+  messageTimestamp: string | null;
+};
+
+function decodeMirrorMessage(messageBase64: string): MirrorLifecycleMessage | null {
+  try {
+    const decoded = Buffer.from(messageBase64, "base64").toString("utf8");
+    const parsed = JSON.parse(decoded) as MirrorLifecycleMessage;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export class ReconciliationService {
   private readonly hcsAuditService = new HcsAuditService();
   private readonly reputationService = new ReputationService();
+  private readonly hederaConfig = getHederaConfig();
+
+  private async fetchMirrorJson<T>(path: string): Promise<T | null> {
+    const baseUrl = this.hederaConfig.mirrorNodeBaseUrl.replace(/\/+$/, "");
+    const url = `${baseUrl}${path}`;
+    const fetchFn = globalThis.fetch;
+
+    if (typeof fetchFn !== "function") {
+      return null;
+    }
+
+    try {
+      const response = await fetchFn(url, {
+        headers: {
+          accept: "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      return (await response.json()) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  private async lookupMirrorTransaction(txId: string): Promise<MirrorTransactionView | null> {
+    const payload = await this.fetchMirrorJson<MirrorTransactionsResponse>(
+      `/api/v1/transactions/${encodeURIComponent(txId)}`
+    );
+    const tx = payload?.transactions?.[0];
+
+    if (!tx) {
+      return null;
+    }
+
+    return {
+      txId: tx.transaction_id,
+      consensusTimestamp: tx.consensus_timestamp,
+      result: tx.result,
+      name: tx.name,
+      entityId: tx.entity_id ?? null
+    };
+  }
+
+  private async lookupMirrorTopicMessages(
+    topicId: string,
+    orderId: string
+  ): Promise<MirrorTopicMessageView[]> {
+    const payload = await this.fetchMirrorJson<MirrorTopicMessagesResponse>(
+      `/api/v1/topics/${encodeURIComponent(topicId)}/messages?limit=100&order=asc`
+    );
+
+    if (!payload?.messages) {
+      return [];
+    }
+
+    return payload.messages
+      .map((item) => {
+        const lifecycle = decodeMirrorMessage(item.message);
+        if (lifecycle?.orderId && lifecycle.orderId !== orderId) {
+          return null;
+        }
+
+        return {
+          sequenceNumber: item.sequence_number,
+          consensusTimestamp: item.consensus_timestamp,
+          payerAccountId: item.payer_account_id,
+          eventType: lifecycle?.eventType ?? null,
+          txId: lifecycle?.txId ?? null,
+          nonce: lifecycle?.nonce ?? null,
+          messageTimestamp: lifecycle?.timestamp ?? null
+        };
+      })
+      .filter((item): item is MirrorTopicMessageView => item !== null);
+  }
 
   async processHederaWebhook(payload: HederaWebhookPayload) {
     const order = await prisma.order.findUnique({ where: { id: payload.orderId } });
@@ -203,6 +342,27 @@ export class ReconciliationService {
         order.status !== "REVIEW_WINDOW" || order.scheduleId !== null || !!order.hederaLedger?.scheduleId
     };
 
+    const txIds = Array.from(
+      new Set(
+        [
+          order.funding?.hederaTxId,
+          order.hederaLedger?.fundingTxId,
+          order.hederaLedger?.releaseTxId,
+          order.hederaLedger?.refundTxId,
+          ...order.hcsEvents.map((event) => event.txId)
+        ].filter((value): value is string => typeof value === "string" && value.length > 0)
+      )
+    );
+
+    const mirrorTransactions = (
+      await Promise.all(txIds.map((txId) => this.lookupMirrorTransaction(txId)))
+    ).filter((item): item is MirrorTransactionView => item !== null);
+
+    const topicId = order.hederaLedger?.topicId ?? this.hederaConfig.hcsTopicId ?? null;
+    const mirrorTopicMessages = topicId
+      ? await this.lookupMirrorTopicMessages(topicId, orderId)
+      : [];
+
     return {
       order: {
         id: order.id,
@@ -220,7 +380,13 @@ export class ReconciliationService {
         : null,
       ledger: order.hederaLedger,
       checks,
-      timeline
+      timeline,
+      mirror: {
+        baseUrl: this.hederaConfig.mirrorNodeBaseUrl,
+        topicId,
+        transactions: mirrorTransactions,
+        topicMessages: mirrorTopicMessages
+      }
     };
   }
 }
