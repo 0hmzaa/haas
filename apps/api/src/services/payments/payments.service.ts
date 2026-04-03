@@ -4,6 +4,7 @@ import { assertTransition, type OrderStatus } from "@haas/shared/order";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
+import { getHederaConfig } from "../../config/hedera.config.js";
 
 export type PaymentRequirement = {
   orderId: string;
@@ -31,13 +32,14 @@ function formatRequirement(input: {
   x402PaymentId: string;
   amount: Prisma.Decimal;
   asset: string;
+  recipient: string;
 }): PaymentRequirement {
   return {
     orderId: input.orderId,
     x402PaymentId: input.x402PaymentId,
     amount: input.amount.toString(),
     asset: input.asset,
-    recipient: "platform-held-escrow-account",
+    recipient: input.recipient,
     facilitatorMode: "hedera-compatible",
     paymentEndpoint: `/api/webhooks/x402`
   };
@@ -45,6 +47,11 @@ function formatRequirement(input: {
 
 export class PaymentsService {
   private readonly hcsAuditService = new HcsAuditService();
+  private readonly hederaConfig = getHederaConfig();
+
+  private getEscrowRecipient(): string {
+    return this.hederaConfig.defaultEscrowAccountId ?? "platform-held-escrow-account";
+  }
 
   async createPaymentRequirement(orderId: string): Promise<PaymentRequirement> {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -70,7 +77,8 @@ export class PaymentsService {
         orderId,
         x402PaymentId: existing.x402PaymentId,
         amount: existing.amount,
-        asset: existing.asset
+        asset: existing.asset,
+        recipient: this.getEscrowRecipient()
       });
     }
 
@@ -104,7 +112,8 @@ export class PaymentsService {
       orderId,
       x402PaymentId: funding.x402PaymentId,
       amount: funding.amount,
-      asset: funding.asset
+      asset: funding.asset,
+      recipient: this.getEscrowRecipient()
     });
   }
 
@@ -173,6 +182,31 @@ export class PaymentsService {
       const updatedOrder = await tx.order.update({
         where: { id: currentOrder.id },
         data: { status: "FUNDED" }
+      });
+
+      await tx.hederaOrderLedger.upsert({
+        where: { orderId: currentOrder.id },
+        update: {
+          hederaNetwork: this.hederaConfig.network,
+          escrowAccountId: this.hederaConfig.defaultEscrowAccountId,
+          fundingTxId: updatedFunding.hederaTxId,
+          x402PaymentId: updatedFunding.x402PaymentId,
+          facilitatorId: updatedFunding.facilitatorId,
+          payerAccount: updatedFunding.payerAccount,
+          asset: updatedFunding.asset,
+          fundedAt: updatedFunding.fundedAt
+        },
+        create: {
+          orderId: currentOrder.id,
+          hederaNetwork: this.hederaConfig.network,
+          escrowAccountId: this.hederaConfig.defaultEscrowAccountId,
+          fundingTxId: updatedFunding.hederaTxId,
+          x402PaymentId: updatedFunding.x402PaymentId,
+          facilitatorId: updatedFunding.facilitatorId,
+          payerAccount: updatedFunding.payerAccount,
+          asset: updatedFunding.asset,
+          fundedAt: updatedFunding.fundedAt
+        }
       });
 
       return { updatedFunding, updatedOrder };
