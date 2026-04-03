@@ -142,6 +142,7 @@ export class ProofService {
         proofSubmittedAt: result.proofSubmittedAt.toISOString(),
         reviewWindowHours: result.reviewWindowHours,
         scheduleId: schedule.scheduleId,
+        scheduleCreateTxId: schedule.scheduleCreateTxId,
         autoReleaseAt: schedule.releaseAt.toISOString()
       }
     });

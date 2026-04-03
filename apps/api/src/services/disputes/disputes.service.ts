@@ -162,7 +162,8 @@ export class DisputesService {
       payload: {
         reasonCode: input.reasonCode,
         assignedReviewerIds: reviewerIds,
-        cancelledScheduleId: cancelledSchedule?.scheduleId ?? null
+        cancelledScheduleId: cancelledSchedule?.scheduleId ?? null,
+        scheduleCancelTxId: cancelledSchedule?.cancellationTxId ?? null
       }
     });
 

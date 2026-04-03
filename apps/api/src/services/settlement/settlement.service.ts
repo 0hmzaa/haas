@@ -74,7 +74,8 @@ export class SettlementService {
       actorId,
       txId: releaseTxId,
       payload: {
-        cancelledScheduleId: cancelledSchedule?.scheduleId ?? null
+        cancelledScheduleId: cancelledSchedule?.scheduleId ?? null,
+        scheduleCancelTxId: cancelledSchedule?.cancellationTxId ?? null
       }
     });
 
@@ -88,7 +89,8 @@ export class SettlementService {
       orderId: updatedOrder.id,
       orderStatus: updatedOrder.status,
       releaseTxId,
-      cancelledScheduleId: cancelledSchedule?.scheduleId ?? null
+      cancelledScheduleId: cancelledSchedule?.scheduleId ?? null,
+      scheduleCancelTxId: cancelledSchedule?.cancellationTxId ?? null
     };
   }
 }

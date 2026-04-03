@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
+import { HederaRuntimeService } from "./hedera-runtime.service.js";
 
 export type AutoReleaseSchedule = {
   scheduleId: string;
   releaseAt: Date;
+  scheduleCreateTxId: string | null;
 };
 
 function getAdminKeyOrThrow(): string {
@@ -20,7 +22,19 @@ function getAdminKeyOrThrow(): string {
   return adminKey;
 }
 
+const LOCAL_SCHEDULE_PREFIX = "sched_local_";
+
+function isHederaAccountId(value: string): boolean {
+  return /^\d+\.\d+\.\d+$/.test(value);
+}
+
+function isLocalScheduleId(scheduleId: string): boolean {
+  return scheduleId.startsWith(LOCAL_SCHEDULE_PREFIX);
+}
+
 export class ScheduledReleaseService {
+  private readonly hederaRuntime = new HederaRuntimeService();
+
   ensureAdminKeyConfigured(): void {
     getAdminKeyOrThrow();
   }
@@ -35,18 +49,77 @@ export class ScheduledReleaseService {
     const releaseAt = new Date(
       input.proofSubmittedAt.getTime() + input.reviewWindowHours * 60 * 60 * 1000
     );
-    const scheduleId = `sched_${randomUUID()}`;
+
+    let scheduleId = `${LOCAL_SCHEDULE_PREFIX}${randomUUID()}`;
+    let scheduleCreateTxId: string | null = null;
+
+    if (this.hederaRuntime.isEnabled()) {
+      const order = await prisma.order.findUnique({
+        where: { id: input.orderId },
+        select: {
+          amount: true,
+          currency: true,
+          worker: {
+            select: {
+              verifiedHuman: {
+                select: {
+                  walletAddress: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!order) {
+        throw new AppError("Order not found", 404);
+      }
+
+      if (order.currency !== "HBAR") {
+        throw new AppError(
+          "Only HBAR settlements are supported for Hedera scheduled release",
+          409
+        );
+      }
+
+      const receiverAccountId = order.worker.verifiedHuman.walletAddress;
+
+      if (!receiverAccountId || !isHederaAccountId(receiverAccountId)) {
+        throw new AppError(
+          "Worker walletAddress must be a Hedera account id (for example 0.0.1234)",
+          409
+        );
+      }
+
+      const created = await this.hederaRuntime.createScheduledRelease({
+        receiverAccountId,
+        amountHbar: order.amount.toString(),
+        executeAt: releaseAt,
+        memo: `haas.order.${input.orderId}.auto-release`
+      });
+
+      if (!created) {
+        throw new AppError("Failed to create Hedera auto-release schedule", 500);
+      }
+
+      scheduleId = created.scheduleId;
+      scheduleCreateTxId = created.txId;
+    }
+
+    const hederaConfig = this.hederaRuntime.getConfig();
 
     await prisma.hederaOrderLedger.upsert({
       where: { orderId: input.orderId },
       update: {
         scheduleId,
-        hederaNetwork: "testnet"
+        hederaNetwork: hederaConfig.network,
+        escrowAccountId: hederaConfig.defaultEscrowAccountId
       },
       create: {
         orderId: input.orderId,
         scheduleId,
-        hederaNetwork: "testnet"
+        hederaNetwork: hederaConfig.network,
+        escrowAccountId: hederaConfig.defaultEscrowAccountId
       }
     });
 
@@ -59,7 +132,8 @@ export class ScheduledReleaseService {
 
     return {
       scheduleId,
-      releaseAt
+      releaseAt,
+      scheduleCreateTxId
     };
   }
 
@@ -75,6 +149,13 @@ export class ScheduledReleaseService {
       return null;
     }
 
+    let cancellationTxId: string | null = null;
+
+    if (this.hederaRuntime.isEnabled() && !isLocalScheduleId(order.scheduleId)) {
+      const cancellation = await this.hederaRuntime.deleteSchedule(order.scheduleId);
+      cancellationTxId = cancellation?.txId ?? null;
+    }
+
     await prisma.order.update({
       where: { id: orderId },
       data: { scheduleId: null }
@@ -85,6 +166,9 @@ export class ScheduledReleaseService {
       data: { scheduleId: null }
     });
 
-    return { scheduleId: order.scheduleId };
+    return {
+      scheduleId: order.scheduleId,
+      cancellationTxId
+    };
   }
 }
