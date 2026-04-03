@@ -13,7 +13,8 @@ export default [
       parser: tsParser,
       globals: {
         process: "readonly",
-        console: "readonly"
+        console: "readonly",
+        Buffer: "readonly"
       },
       parserOptions: {
         project: ["./tsconfig.json"],

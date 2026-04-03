@@ -16,11 +16,13 @@
   "dependencies": {
     "@haas/shared": "workspace:*",
     "@prisma/client": "^5.22.0",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/express": "^4.17.23",
+    "@types/multer": "^2.0.0",
     "@types/node": "^24.7.2",
     "@typescript-eslint/eslint-plugin": "^8.44.1",
     "@typescript-eslint/parser": "^8.44.1",
