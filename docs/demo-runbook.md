@@ -5,6 +5,7 @@
 - Ensure API is reachable on `http://localhost:4000`.
 - Set `HEDERA_SCHEDULE_ADMIN_KEY` in environment (required for review timeout schedules).
 - If `HEDERA_ENABLED=true`, configure operator/topic envs and ensure workers are onboarded with Hedera-style `walletAddress` (format `0.0.x`).
+- For World ID, keep `WORLD_ID_MODE=mock` for local demo, or switch to `WORLD_ID_MODE=live` with `WORLD_ID_VERIFY_URL`/`WORLD_ID_APP_ID`.
 
 ## 2. Quality Gate Before Demo
 Run:

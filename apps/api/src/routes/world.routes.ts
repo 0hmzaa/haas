@@ -1,10 +1,24 @@
 import { Router } from "express";
 import { AppError } from "../lib/app-error.js";
 import { WorldService } from "../services/world/world.service.js";
+import type { WorldVerificationAdapter } from "../services/world/world.adapter.js";
 import { MockWorldVerificationAdapter } from "../services/world/world.mock.adapter.js";
+import { HttpWorldVerificationAdapter } from "../services/world/world.http.adapter.js";
+import { getWorldConfig } from "../config/world.config.js";
 
 const router = Router();
-const worldService = new WorldService(new MockWorldVerificationAdapter());
+
+function createWorldVerificationAdapter(): WorldVerificationAdapter {
+  const config = getWorldConfig();
+
+  if (config.mode === "live") {
+    return new HttpWorldVerificationAdapter();
+  }
+
+  return new MockWorldVerificationAdapter();
+}
+
+const worldService = new WorldService(createWorldVerificationAdapter());
 
 router.post("/verify", async (req, res, next) => {
   try {
