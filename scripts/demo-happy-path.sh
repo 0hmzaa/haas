@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+API_BASE_URL="${API_BASE_URL:-http://localhost:4000}"
+MODE="${1:-approve}"
+
+log() {
+  printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$1"
+}
+
+json_get() {
+  local path="$1"
+  node -e '
+const fs = require("fs");
+const path = process.argv[1].split(".");
+const data = JSON.parse(fs.readFileSync(0, "utf8"));
+let cursor = data;
+for (const key of path) {
+  cursor = cursor?.[key];
+}
+if (cursor === undefined) {
+  process.exit(2);
+}
+if (typeof cursor === "object") {
+  process.stdout.write(JSON.stringify(cursor));
+} else {
+  process.stdout.write(String(cursor));
+}
+' "$path"
+}
+
+post_json() {
+  local endpoint="$1"
+  local payload="$2"
+  curl -sS -X POST "${API_BASE_URL}${endpoint}" \
+    -H 'Content-Type: application/json' \
+    -d "$payload"
+}
+
+patch_json() {
+  local endpoint="$1"
+  local payload="$2"
+  curl -sS -X PATCH "${API_BASE_URL}${endpoint}" \
+    -H 'Content-Type: application/json' \
+    -d "$payload"
+}
+
+create_verified_worker() {
+  local label="$1"
+  local session_id="session-${label}-$(date +%s)-$RANDOM"
+  local nullifier_hash="nullifier-${label}-$(date +%s)-$RANDOM"
+
+  local verified
+  verified="$(post_json '/api/world/verify' "{\"session_id\":\"${session_id}\",\"nullifier_hash\":\"${nullifier_hash}\",\"proof\":{\"valid\":true}}")"
+
+  local verified_human_id
+  verified_human_id="$(printf '%s' "$verified" | json_get 'verifiedHumanId')"
+
+  local worker
+  worker="$(post_json '/api/workers' "{\"verifiedHumanId\":\"${verified_human_id}\",\"displayName\":\"${label}\",\"skills\":[\"local-task\"],\"baseRate\":\"15.00\"}")"
+
+  local worker_id
+  worker_id="$(printf '%s' "$worker" | json_get 'id')"
+
+  printf '%s|%s\n' "$verified_human_id" "$worker_id"
+}
+
+log "Starting demo flow in mode=${MODE} against ${API_BASE_URL}"
+
+worker_pair="$(create_verified_worker 'worker-main')"
+WORKER_VERIFIED_HUMAN_ID="${worker_pair%%|*}"
+WORKER_ID="${worker_pair##*|}"
+log "Worker created: workerId=${WORKER_ID} verifiedHumanId=${WORKER_VERIFIED_HUMAN_ID}"
+
+ORDER_PAYLOAD="{\"clientId\":\"client-demo\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Check cafe queue\",\"objective\":\"Measure waiting time\",\"instructions\":\"Go onsite and report queue length\",\"amount\":\"20.00\",\"currency\":\"HBAR\"}"
+ORDER_RESP="$(post_json '/api/orders' "$ORDER_PAYLOAD")"
+ORDER_ID="$(printf '%s' "$ORDER_RESP" | json_get 'id')"
+log "Order created: ${ORDER_ID}"
+
+PAY_RESP="$(post_json "/api/orders/${ORDER_ID}/pay" '{}')"
+X402_PAYMENT_ID="$(printf '%s' "$PAY_RESP" | json_get 'payment.x402PaymentId')"
+log "Payment requirements generated: x402PaymentId=${X402_PAYMENT_ID}"
+
+FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"0.0.demo-$(date +%s)\",\"facilitatorId\":\"facilitator-demo\",\"payerAccount\":\"0.0.5005\",\"amount\":\"20.00\",\"asset\":\"HBAR\"}"
+post_json '/api/webhooks/x402' "$FUND_WEBHOOK_PAYLOAD" >/dev/null
+log "Funding webhook processed"
+
+post_json "/api/orders/${ORDER_ID}/start" '{}' >/dev/null
+log "Order started"
+
+TMP_FILE="$(mktemp /tmp/haas-proof-XXXXXX.txt)"
+printf 'Queue length observed: 7 people.\nCaptured at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$TMP_FILE"
+
+curl -sS -X POST "${API_BASE_URL}/api/orders/${ORDER_ID}/proof" \
+  -F "file=@${TMP_FILE};type=text/plain" \
+  -F 'summary=Queue measurement delivered' >/dev/null
+
+rm -f "$TMP_FILE"
+log "Proof submitted"
+
+case "$MODE" in
+  approve)
+    post_json "/api/orders/${ORDER_ID}/approve" '{"actorId":"client-demo"}' >/dev/null
+    log "Order approved"
+    ;;
+  dispute)
+    log "Preparing three eligible reviewers"
+    declare -a REVIEWER_IDS=()
+    for idx in 1 2 3; do
+      pair="$(create_verified_worker "reviewer-${idx}")"
+      reviewer_verified_human_id="${pair%%|*}"
+      reviewer_worker_id="${pair##*|}"
+      patch_json "/api/workers/${reviewer_worker_id}" '{"reviewerEligible":true}' >/dev/null
+      REVIEWER_IDS+=("${reviewer_verified_human_id}")
+    done
+
+    DISPUTE_RESP="$(post_json "/api/orders/${ORDER_ID}/dispute" '{"reasonCode":"PROOF_INSUFFICIENT","clientStatement":"Need reviewer decision"}')"
+    ASSIGNED_1="$(printf '%s' "$DISPUTE_RESP" | json_get 'assignedReviewerIds.0')"
+    ASSIGNED_2="$(printf '%s' "$DISPUTE_RESP" | json_get 'assignedReviewerIds.1')"
+
+    post_json "/api/orders/${ORDER_ID}/dispute/vote" "{\"reviewerId\":\"${ASSIGNED_1}\",\"vote\":\"RELEASE_TO_WORKER\"}" >/dev/null
+    post_json "/api/orders/${ORDER_ID}/dispute/vote" "{\"reviewerId\":\"${ASSIGNED_2}\",\"vote\":\"RELEASE_TO_WORKER\"}" >/dev/null
+    log "Dispute opened and majority vote submitted"
+    ;;
+  auto)
+    log "Auto-release mode selected: no client action taken. Wait for review window timeout job."
+    ;;
+  *)
+    echo "Unknown mode: ${MODE}. Use approve|dispute|auto" >&2
+    exit 1
+    ;;
+esac
+
+ORDER_FINAL="$(curl -sS "${API_BASE_URL}/api/orders/${ORDER_ID}")"
+ORDER_STATUS="$(printf '%s' "$ORDER_FINAL" | json_get 'status')"
+log "Final order status: ${ORDER_STATUS}"
+
+AUDIT="$(curl -sS "${API_BASE_URL}/api/orders/${ORDER_ID}/audit")"
+TIMELINE_COUNT="$(printf '%s' "$AUDIT" | json_get 'timeline.length')"
+log "Audit timeline events: ${TIMELINE_COUNT}"
+
+printf '\nDemo completed successfully for order %s in mode=%s\n' "$ORDER_ID" "$MODE"

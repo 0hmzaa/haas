@@ -29,6 +29,7 @@ export type CreateWorkerInput = {
 export type UpdateWorkerInput = Omit<CreateWorkerInput, "verifiedHumanId" | "displayName" | "baseRate"> & {
   displayName?: string;
   baseRate?: string;
+  reviewerEligible?: boolean;
 };
 
 function formatWorker(worker: {
@@ -104,7 +105,8 @@ export class WorkersService {
         skills: input.skills,
         availabilityStatus: input.availabilityStatus,
         baseRate: input.baseRate ? new Prisma.Decimal(input.baseRate) : undefined,
-        acceptedProofTypes: input.acceptedProofTypes
+        acceptedProofTypes: input.acceptedProofTypes,
+        reviewerEligible: input.reviewerEligible
       }
     });
 

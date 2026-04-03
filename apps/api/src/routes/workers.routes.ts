@@ -105,7 +105,11 @@ router.patch("/:id", async (req, res, next) => {
       baseRate: typeof req.body?.baseRate === "string" ? req.body.baseRate : undefined,
       acceptedProofTypes: Array.isArray(req.body?.acceptedProofTypes)
         ? req.body.acceptedProofTypes
-        : undefined
+        : undefined,
+      reviewerEligible:
+        typeof req.body?.reviewerEligible === "boolean"
+          ? req.body.reviewerEligible
+          : undefined
     });
 
     res.status(200).json(worker);

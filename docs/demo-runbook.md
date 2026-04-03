@@ -1,0 +1,51 @@
+# HumanAsAService Demo Runbook
+
+## 1. Prerequisites
+- Start PostgreSQL and app services (for example via Docker Compose).
+- Ensure API is reachable on `http://localhost:4000`.
+- Set `HEDERA_SCHEDULE_ADMIN_KEY` in environment (required for review timeout schedules).
+
+## 2. Quality Gate Before Demo
+Run:
+
+```bash
+pnpm lint
+pnpm build
+```
+
+## 3. Execute Demo Script
+Approve flow (default):
+
+```bash
+pnpm demo:happy-path
+```
+
+Dispute flow:
+
+```bash
+pnpm demo:happy-path dispute
+```
+
+Auto-release preparation flow:
+
+```bash
+pnpm demo:happy-path auto
+```
+
+## 4. What the Script Covers
+- Worker onboarding (`/api/world/verify` + `/api/workers`)
+- Order creation
+- x402-style payment requirement generation
+- Funding confirmation webhook
+- Order start
+- Proof upload with local storage + hash
+- Branch handling:
+  - `approve`: direct approval path
+  - `dispute`: opens dispute + submits majority reviewer votes
+  - `auto`: leaves order in review window for timeout handling
+- Audit timeline fetch (`/api/orders/:id/audit`)
+
+## 5. Manual Checks
+- `GET /api/orders/:id` to verify final status.
+- `GET /api/orders/:id/audit` to inspect lifecycle chronology.
+- `GET /api/reputation/workers/:id` and `GET /api/reputation/reviewers/:id` to inspect score updates.
