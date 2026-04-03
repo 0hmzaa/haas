@@ -3,6 +3,7 @@ import worldRoutes from "./routes/world.routes.js";
 import workersRoutes from "./routes/workers.routes.js";
 import ordersRoutes from "./routes/orders.routes.js";
 import x402Routes from "./routes/x402.routes.js";
+import reputationRoutes from "./routes/reputation.routes.js";
 import { notFound } from "./middleware/not-found.js";
 import { errorHandler } from "./middleware/error-handler.js";
 
@@ -27,6 +28,7 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/world", worldRoutes);
 app.use("/api/workers", workersRoutes);
 app.use("/api/orders", ordersRoutes);
+app.use("/api/reputation", reputationRoutes);
 app.use("/api", x402Routes);
 
 app.use(notFound);

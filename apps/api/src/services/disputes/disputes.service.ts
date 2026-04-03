@@ -5,6 +5,7 @@ import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
 import { ScheduledReleaseService } from "../hedera/scheduled-release.service.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
+import { ReputationService } from "../reputation/reputation.service.js";
 
 const RESOLUTION_TO_ORDER_STATUS: Record<DisputeResolution, OrderStatus> = {
   RELEASE_TO_WORKER: "APPROVED",
@@ -51,6 +52,7 @@ function getMajorityResolution(
 export class DisputesService {
   private readonly scheduledReleaseService = new ScheduledReleaseService();
   private readonly hcsAuditService = new HcsAuditService();
+  private readonly reputationService = new ReputationService();
 
   async openDispute(
     orderId: string,
@@ -355,6 +357,15 @@ export class DisputesService {
         txId: settlementTxId
       });
     }
+
+    await this.reputationService.recordOrderOutcome({
+      orderId,
+      approved: majorityResolution !== "REFUND_CLIENT",
+      disputed: true,
+      disputeOutcome: majorityResolution
+    });
+
+    await this.reputationService.updateReviewerReputationForDispute(dispute.id);
 
     return {
       resolved: true,

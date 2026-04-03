@@ -4,10 +4,12 @@ import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
 import { ScheduledReleaseService } from "../hedera/scheduled-release.service.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
+import { ReputationService } from "../reputation/reputation.service.js";
 
 export class SettlementService {
   private readonly scheduledReleaseService = new ScheduledReleaseService();
   private readonly hcsAuditService = new HcsAuditService();
+  private readonly reputationService = new ReputationService();
 
   async approveOrder(orderId: string, actorId?: string) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -74,6 +76,12 @@ export class SettlementService {
       payload: {
         cancelledScheduleId: cancelledSchedule?.scheduleId ?? null
       }
+    });
+
+    await this.reputationService.recordOrderOutcome({
+      orderId,
+      approved: true,
+      disputed: false
     });
 
     return {
