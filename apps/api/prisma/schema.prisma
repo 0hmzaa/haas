@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  DRAFT
+  PAYMENT_PENDING
+  FUNDED
+  IN_PROGRESS
+  PROOF_SUBMITTED
+  REVIEW_WINDOW
+  APPROVED
+  DISPUTED
+  AUTO_RELEASED
+  REFUNDED
+  SPLIT_SETTLED
+  CANCELLED
+  FAILED
+}
+
+enum FundingStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED
+}
+
+enum DisputeResolution {
+  RELEASE_TO_WORKER
+  REFUND_CLIENT
+  SPLIT_PAYMENT
+}
+
+enum HcsEventType {
+  order_created
+  order_funded
+  order_started
+  proof_submitted
+  review_window_started
+  order_approved
+  order_disputed
+  reviewer_vote_submitted
+  order_resolved
+  order_auto_released
+  order_refunded
+}
+
+model VerifiedHuman {
+  id                 String              @id @default(cuid())
+  worldSessionId     String              @unique
+  walletAddress      String?             @unique
+  worldVerified      Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  nullifiers         WorldNullifier[]
+  workerProfile      WorkerProfile?
+  reviewerVotes      DisputeVote[]       @relation("ReviewerIdentity")
+  reviewerReputation ReviewerReputation?
+}
+
+model WorldNullifier {
+  id              String        @id @default(cuid())
+  nullifier       String        @unique
+  verifiedHumanId String
+  createdAt       DateTime      @default(now())
+  verifiedHuman   VerifiedHuman @relation(fields: [verifiedHumanId], references: [id], onDelete: Cascade)
+}
+
+model WorkerProfile {
+  id                 String             @id @default(cuid())
+  verifiedHumanId    String             @unique
+  displayName        String
+  bio                String?
+  country            String?
+  city               String?
+  timezone           String?
+  languages          Json?
+  skills             Json?
+  availabilityStatus String             @default("AVAILABLE")
+  baseRate           Decimal            @db.Decimal(18, 6)
+  acceptedProofTypes Json?
+  ratingAvg          Float              @default(0)
+  completedJobs      Int                @default(0)
+  approvalRate       Float              @default(0)
+  disputeRate        Float              @default(0)
+  disputeLossRate    Float              @default(0)
+  reputationScore    Float              @default(0)
+  reviewerEligible   Boolean            @default(false)
+  isSuspended        Boolean            @default(false)
+  isBanned           Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  verifiedHuman      VerifiedHuman      @relation(fields: [verifiedHumanId], references: [id], onDelete: Cascade)
+  orders             Order[]
+  reputationRecords  ReputationRecord[]
+}
+
+model Order {
+  id                      String              @id @default(cuid())
+  clientId                String
+  workerId                String
+  title                   String
+  objective               String
+  instructions            String
+  locationContext         String?
+  deadlineAt              DateTime?
+  expectedDurationMinutes Int?
+  requiredProofSchema     Json?
+  acceptanceCriteria      Json?
+  amount                  Decimal             @db.Decimal(18, 6)
+  currency                String              @default("HBAR")
+  platformFeeBps          Int                 @default(0)
+  reviewerFeeReserve      Decimal             @default(0) @db.Decimal(18, 6)
+  reviewWindowHours       Int                 @default(72)
+  status                  OrderStatus         @default(DRAFT)
+  proofSubmittedAt        DateTime?
+  scheduleId              String?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  worker                  WorkerProfile       @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  funding                 FundingRecord?
+  proofs                  ProofArtifact[]
+  disputeCase             DisputeCase?
+  reputationRecords       ReputationRecord[]
+  hederaLedger            HederaOrderLedger?
+  hcsEvents               HcsEvent[]
+
+  @@index([workerId])
+  @@index([status])
+}
+
+model FundingRecord {
+  id             String        @id @default(cuid())
+  orderId        String        @unique
+  x402PaymentId  String        @unique
+  hederaTxId     String?
+  facilitatorId  String?
+  payerAccount   String?
+  amount         Decimal       @db.Decimal(18, 6)
+  asset          String        @default("HBAR")
+  status         FundingStatus @default(PENDING)
+  fundedAt       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model ProofArtifact {
+  id                  String   @id @default(cuid())
+  orderId             String
+  originalName        String
+  mimeType            String
+  localPath           String
+  fileSize            BigInt
+  sha256Hash          String
+  uploadedAt          DateTime @default(now())
+  summary             String?
+  checklistJson       Json?
+  structuredJson      Json?
+  geoMetadata         Json?
+  timeMetadata        Json?
+  confidenceStatement String?
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model DisputeCase {
+  id              String            @id @default(cuid())
+  orderId         String            @unique
+  reasonCode      String
+  clientStatement String
+  workerStatement String?
+  status          DisputeStatus     @default(OPEN)
+  resolution      DisputeResolution?
+  resolvedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  order           Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  votes           DisputeVote[]
+}
+
+model DisputeVote {
+  id            String            @id @default(cuid())
+  disputeCaseId String
+  reviewerId    String
+  vote          DisputeResolution
+  submittedAt   DateTime          @default(now())
+  disputeCase   DisputeCase       @relation(fields: [disputeCaseId], references: [id], onDelete: Cascade)
+  reviewer      VerifiedHuman     @relation("ReviewerIdentity", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@unique([disputeCaseId, reviewerId])
+}
+
+model ReputationRecord {
+  id               String             @id @default(cuid())
+  workerId         String
+  orderId          String
+  rating           Int?
+  approved         Boolean
+  timely           Boolean
+  disputed         Boolean
+  disputeOutcome   DisputeResolution?
+  proofQualityScore Int?
+  reviewerFeedback String?
+  deltaScore       Float
+  createdAt        DateTime           @default(now())
+  worker           WorkerProfile      @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  order            Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([workerId])
+  @@index([orderId])
+}
+
+model ReviewerReputation {
+  id                    String        @id @default(cuid())
+  reviewerId            String        @unique
+  reviewsCompleted      Int           @default(0)
+  majorityAlignmentRate Float         @default(0)
+  reviewSpeedScore      Float         @default(0)
+  abuseReports          Int           @default(0)
+  consistencyScore      Float         @default(0)
+  trustScore            Float         @default(0)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  reviewer              VerifiedHuman @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+}
+
+model HederaOrderLedger {
+  id                     String   @id @default(cuid())
+  orderId                String   @unique
+  hederaNetwork          String   @default("testnet")
+  escrowAccountId        String?
+  scheduleId             String?
+  topicId                String?
+  fundingTxId            String?
+  proofMessageSequence   String?
+  disputeMessageSequence String?
+  releaseTxId            String?
+  refundTxId             String?
+  x402PaymentId          String?
+  facilitatorId          String?
+  payerAccount           String?
+  asset                  String?
+  fundedAt               DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  order                  Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model HcsEvent {
+  id         String            @id @default(cuid())
+  orderId    String?
+  eventType  HcsEventType
+  actorId    String?
+  timestamp  DateTime          @default(now())
+  proofHash  String?
+  storageRef String?
+  resolution DisputeResolution?
+  txId       String?
+  nonce      String?
+  payload    Json?
+  order      Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, timestamp])
+}
