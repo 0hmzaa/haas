@@ -6,6 +6,7 @@ import path from "node:path";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
+import { ScheduledReleaseService } from "../hedera/scheduled-release.service.js";
 
 export type SubmitProofInput = {
   orderId: string;
@@ -39,6 +40,7 @@ function sanitizeFilename(name: string): string {
 
 export class ProofService {
   private readonly hcsAuditService = new HcsAuditService();
+  private readonly scheduledReleaseService = new ScheduledReleaseService();
 
   async submitProof(input: SubmitProofInput) {
     const order = await prisma.order.findUnique({ where: { id: input.orderId } });
@@ -50,6 +52,9 @@ export class ProofService {
     if (order.status !== "IN_PROGRESS") {
       throw new AppError("Proof can only be submitted for IN_PROGRESS orders", 409);
     }
+
+    // Every timeout schedule must be cancellable, which requires an admin key.
+    this.scheduledReleaseService.ensureAdminKeyConfigured();
 
     const storageRoot = getProofStorageRoot();
     const orderDir = path.join(storageRoot, input.orderId);
@@ -71,12 +76,15 @@ export class ProofService {
 
       try {
         assertTransition(currentOrder.status as OrderStatus, "PROOF_SUBMITTED");
+        assertTransition("PROOF_SUBMITTED", "REVIEW_WINDOW");
       } catch {
         throw new AppError(
-          `Invalid order transition: ${currentOrder.status} -> PROOF_SUBMITTED`,
+          `Invalid order transition: ${currentOrder.status} -> PROOF_SUBMITTED -> REVIEW_WINDOW`,
           409
         );
       }
+
+      const proofSubmittedAt = new Date();
 
       const proof = await tx.proofArtifact.create({
         data: {
@@ -95,14 +103,25 @@ export class ProofService {
         }
       });
 
-      await tx.order.update({
+      const updatedOrder = await tx.order.update({
         where: { id: currentOrder.id },
         data: {
-          status: "PROOF_SUBMITTED"
+          status: "REVIEW_WINDOW",
+          proofSubmittedAt
         }
       });
 
-      return proof;
+      return {
+        proof,
+        proofSubmittedAt,
+        reviewWindowHours: updatedOrder.reviewWindowHours
+      };
+    });
+
+    const schedule = await this.scheduledReleaseService.createAutoReleaseSchedule({
+      orderId: input.orderId,
+      proofSubmittedAt: result.proofSubmittedAt,
+      reviewWindowHours: result.reviewWindowHours
     });
 
     await this.hcsAuditService.publishEvent({
@@ -116,15 +135,32 @@ export class ProofService {
       }
     });
 
+    await this.hcsAuditService.publishEvent({
+      eventType: "review.window.started",
+      orderId: input.orderId,
+      payload: {
+        proofSubmittedAt: result.proofSubmittedAt.toISOString(),
+        reviewWindowHours: result.reviewWindowHours,
+        scheduleId: schedule.scheduleId,
+        autoReleaseAt: schedule.releaseAt.toISOString()
+      }
+    });
+
     return {
-      id: result.id,
-      orderId: result.orderId,
-      originalName: result.originalName,
-      mimeType: result.mimeType,
-      localPath: result.localPath,
-      fileSize: result.fileSize.toString(),
-      sha256Hash: result.sha256Hash,
-      uploadedAt: result.uploadedAt
+      id: result.proof.id,
+      orderId: result.proof.orderId,
+      originalName: result.proof.originalName,
+      mimeType: result.proof.mimeType,
+      localPath: result.proof.localPath,
+      fileSize: result.proof.fileSize.toString(),
+      sha256Hash: result.proof.sha256Hash,
+      uploadedAt: result.proof.uploadedAt,
+      reviewWindow: {
+        proofSubmittedAt: result.proofSubmittedAt,
+        reviewWindowHours: result.reviewWindowHours,
+        scheduleId: schedule.scheduleId,
+        autoReleaseAt: schedule.releaseAt
+      }
     };
   }
 
