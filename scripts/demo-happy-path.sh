@@ -73,7 +73,12 @@ WORKER_VERIFIED_HUMAN_ID="${worker_pair%%|*}"
 WORKER_ID="${worker_pair##*|}"
 log "Worker created: workerId=${WORKER_ID} verifiedHumanId=${WORKER_VERIFIED_HUMAN_ID}"
 
-ORDER_PAYLOAD="{\"clientId\":\"client-demo\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Check cafe queue\",\"objective\":\"Measure waiting time\",\"instructions\":\"Go onsite and report queue length\",\"amount\":\"20.00\",\"currency\":\"HBAR\"}"
+REVIEW_WINDOW_SUFFIX=""
+if [[ "$MODE" == "auto" ]]; then
+  REVIEW_WINDOW_SUFFIX=",\"reviewWindowHours\":0"
+fi
+
+ORDER_PAYLOAD="{\"clientId\":\"client-demo\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Check cafe queue\",\"objective\":\"Measure waiting time\",\"instructions\":\"Go onsite and report queue length\",\"amount\":\"20.00\",\"currency\":\"HBAR\"${REVIEW_WINDOW_SUFFIX}}"
 ORDER_RESP="$(post_json '/api/orders' "$ORDER_PAYLOAD")"
 ORDER_ID="$(printf '%s' "$ORDER_RESP" | json_get 'id')"
 log "Order created: ${ORDER_ID}"
@@ -124,7 +129,9 @@ case "$MODE" in
     log "Dispute opened and majority vote submitted"
     ;;
   auto)
-    log "Auto-release mode selected: no client action taken. Wait for review window timeout job."
+    AUTO_RELEASE_WEBHOOK_PAYLOAD="{\"orderId\":\"${ORDER_ID}\",\"txType\":\"RELEASE\",\"txId\":\"0.0.auto-$(date +%s)\",\"status\":\"SUCCESS\"}"
+    post_json '/api/webhooks/hedera' "$AUTO_RELEASE_WEBHOOK_PAYLOAD" >/dev/null
+    log "Auto-release mode selected: timeout release webhook simulated"
     ;;
   *)
     echo "Unknown mode: ${MODE}. Use approve|dispute|auto" >&2

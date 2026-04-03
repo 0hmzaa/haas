@@ -43,7 +43,7 @@ pnpm demo:happy-path auto
 - Branch handling:
   - `approve`: direct approval path
   - `dispute`: opens dispute + submits majority reviewer votes
-  - `auto`: leaves order in review window for timeout handling (auto-release finalization is expected from Hedera schedule execution webhook)
+  - `auto`: uses `reviewWindowHours=0` and simulates a `RELEASE` Hedera webhook to demonstrate timeout auto-release end-to-end in one run
 - Audit timeline fetch (`/api/orders/:id/audit`)
 
 ## 5. Manual Checks
