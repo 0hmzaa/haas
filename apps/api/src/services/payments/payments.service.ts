@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { assertTransition, type OrderStatus } from "@haas/shared/order";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
+import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 
 export type PaymentRequirement = {
   orderId: string;
@@ -43,6 +44,8 @@ function formatRequirement(input: {
 }
 
 export class PaymentsService {
+  private readonly hcsAuditService = new HcsAuditService();
+
   async createPaymentRequirement(orderId: string): Promise<PaymentRequirement> {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
 
@@ -173,6 +176,18 @@ export class PaymentsService {
       });
 
       return { updatedFunding, updatedOrder };
+    });
+
+    await this.hcsAuditService.publishEvent({
+      eventType: "order.funded",
+      orderId: updated.updatedOrder.id,
+      txId: updated.updatedFunding.hederaTxId ?? undefined,
+      payload: {
+        amount: updated.updatedFunding.amount.toString(),
+        asset: updated.updatedFunding.asset,
+        payerAccount: updated.updatedFunding.payerAccount,
+        facilitatorId: updated.updatedFunding.facilitatorId
+      }
     });
 
     return {

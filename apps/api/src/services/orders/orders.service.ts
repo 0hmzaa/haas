@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { assertTransition, type OrderStatus } from "@haas/shared/order";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
+import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 
 export type CreateOrderInput = {
   clientId: string;
@@ -54,6 +55,8 @@ function formatOrder(order: OrderShape) {
 }
 
 export class OrdersService {
+  private readonly hcsAuditService = new HcsAuditService();
+
   async createOrder(input: CreateOrderInput) {
     const worker = await prisma.workerProfile.findUnique({
       where: { id: input.workerId }
@@ -88,6 +91,16 @@ export class OrdersService {
       return this.transitionOrderStateInTx(tx, created.id, "PAYMENT_PENDING");
     });
 
+    await this.hcsAuditService.publishEvent({
+      eventType: "order.created",
+      orderId: order.id,
+      actorId: input.clientId,
+      payload: {
+        amount: order.amount.toString(),
+        currency: order.currency
+      }
+    });
+
     return formatOrder(order);
   }
 
@@ -105,6 +118,11 @@ export class OrdersService {
     const order = await prisma.$transaction((tx) =>
       this.transitionOrderStateInTx(tx, orderId, "IN_PROGRESS")
     );
+
+    await this.hcsAuditService.publishEvent({
+      eventType: "order.started",
+      orderId: order.id
+    });
 
     return formatOrder(order);
   }
