@@ -1,5 +1,6 @@
 import express from "express";
 import worldRoutes from "./routes/world.routes.js";
+import workersRoutes from "./routes/workers.routes.js";
 import { notFound } from "./middleware/not-found.js";
 import { errorHandler } from "./middleware/error-handler.js";
 
@@ -22,6 +23,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/world", worldRoutes);
+app.use("/api/workers", workersRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
