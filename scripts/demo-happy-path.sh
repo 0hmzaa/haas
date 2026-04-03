@@ -3,6 +3,8 @@ set -euo pipefail
 
 API_BASE_URL="${API_BASE_URL:-http://localhost:4000}"
 MODE="${1:-approve}"
+X402_FACILITATOR_ID="${X402_FACILITATOR_ID:-facilitator-demo}"
+X402_FACILITATOR_SIGNING_SECRET="${X402_FACILITATOR_SIGNING_SECRET:-dev-facilitator-secret}"
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$1"
@@ -34,6 +36,46 @@ post_json() {
   local payload="$2"
   curl -sS -X POST "${API_BASE_URL}${endpoint}" \
     -H 'Content-Type: application/json' \
+    -d "$payload"
+}
+
+post_signed_x402_webhook() {
+  local endpoint="$1"
+  local payload="$2"
+  local timestamp
+  timestamp="$(date +%s)"
+
+  local signature
+  signature="$(
+    node -e '
+const crypto = require("node:crypto");
+const payload = JSON.parse(process.argv[1]);
+const timestamp = process.argv[2];
+const facilitatorId = process.argv[3];
+const secret = process.argv[4];
+
+const fields = [
+  payload.x402PaymentId ?? "",
+  payload.orderId ?? "",
+  payload.success ? "true" : "false",
+  payload.hederaTxId ?? "",
+  facilitatorId,
+  payload.payerAccount ?? "",
+  payload.amount ?? "",
+  payload.asset ?? ""
+];
+
+const canonical = `${timestamp}.${fields.join("|")}`;
+const signature = crypto.createHmac("sha256", secret).update(canonical).digest("hex");
+process.stdout.write(`v1=${signature}`);
+' "$payload" "$timestamp" "$X402_FACILITATOR_ID" "$X402_FACILITATOR_SIGNING_SECRET"
+  )"
+
+  curl -sS -X POST "${API_BASE_URL}${endpoint}" \
+    -H 'Content-Type: application/json' \
+    -H "x-x402-facilitator-id: ${X402_FACILITATOR_ID}" \
+    -H "x-x402-timestamp: ${timestamp}" \
+    -H "x-x402-signature: ${signature}" \
     -d "$payload"
 }
 
@@ -87,8 +129,8 @@ PAY_RESP="$(post_json "/api/orders/${ORDER_ID}/pay" '{}')"
 X402_PAYMENT_ID="$(printf '%s' "$PAY_RESP" | json_get 'payment.x402PaymentId')"
 log "Payment requirements generated: x402PaymentId=${X402_PAYMENT_ID}"
 
-FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"0.0.demo-$(date +%s)\",\"facilitatorId\":\"facilitator-demo\",\"payerAccount\":\"0.0.5005\",\"amount\":\"20.00\",\"asset\":\"HBAR\"}"
-post_json '/api/webhooks/x402' "$FUND_WEBHOOK_PAYLOAD" >/dev/null
+FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"0.0.demo-$(date +%s)\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"0.0.5005\",\"amount\":\"20.00\",\"asset\":\"HBAR\"}"
+post_signed_x402_webhook '/api/webhooks/x402' "$FUND_WEBHOOK_PAYLOAD" >/dev/null
 log "Funding webhook processed"
 
 post_json "/api/orders/${ORDER_ID}/start" '{}' >/dev/null
