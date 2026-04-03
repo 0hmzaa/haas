@@ -3,6 +3,7 @@ import { Router } from "express";
 import multer from "multer";
 import { AppError } from "../lib/app-error.js";
 import { DisputesService } from "../services/disputes/disputes.service.js";
+import { ReconciliationService } from "../services/hedera/reconciliation.service.js";
 import { OrdersService } from "../services/orders/orders.service.js";
 import { PaymentsService } from "../services/payments/payments.service.js";
 import { ProofService } from "../services/proof/proof.service.js";
@@ -14,6 +15,7 @@ const paymentsService = new PaymentsService();
 const proofService = new ProofService();
 const settlementService = new SettlementService();
 const disputesService = new DisputesService();
+const reconciliationService = new ReconciliationService();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -249,6 +251,15 @@ router.post("/:id/dispute/vote", async (req, res, next) => {
     });
 
     res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/audit", async (req, res, next) => {
+  try {
+    const audit = await reconciliationService.getOrderAuditTimeline(req.params.id);
+    res.status(200).json(audit);
   } catch (error) {
     next(error);
   }
