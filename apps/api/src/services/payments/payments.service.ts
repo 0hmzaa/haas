@@ -6,7 +6,10 @@ import { AppError } from "../../lib/app-error.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 import { getHederaConfig } from "../../config/hedera.config.js";
 import { getX402Config } from "../../config/x402.config.js";
-import { X402FacilitatorAdapter } from "./x402-facilitator.adapter.js";
+import {
+  X402FacilitatorAdapter,
+  type X402FacilitatorPaymentRequirements
+} from "./x402-facilitator.adapter.js";
 import { X402FacilitatorVerifierService } from "./x402-facilitator-verifier.service.js";
 
 export type PaymentRequirement = {
@@ -27,6 +30,10 @@ export type PaymentRequirement = {
     facilitatorHeader: "x-x402-facilitator-id";
     timestampToleranceSeconds: number;
     canonicalPayloadTemplate: string;
+  };
+  x402: {
+    x402Version: 1;
+    paymentRequirements: X402FacilitatorPaymentRequirements;
   };
 };
 
@@ -58,6 +65,7 @@ function formatRequirement(input: {
   facilitatorId?: string;
   requiresSignature: boolean;
   signatureMaxAgeSeconds: number;
+  x402PaymentRequirements: X402FacilitatorPaymentRequirements;
 }): PaymentRequirement {
   return {
     orderId: input.orderId,
@@ -78,6 +86,10 @@ function formatRequirement(input: {
       timestampToleranceSeconds: input.signatureMaxAgeSeconds,
       canonicalPayloadTemplate:
         "{timestamp}.{x402PaymentId}|{orderId}|{success}|{hederaTxId}|{facilitatorId}|{payerAccount}|{amount}|{asset}"
+    },
+    x402: {
+      x402Version: 1,
+      paymentRequirements: input.x402PaymentRequirements
     }
   };
 }
@@ -91,6 +103,28 @@ export class PaymentsService {
 
   private getEscrowRecipient(): string {
     return this.hederaConfig.defaultEscrowAccountId ?? "platform-held-escrow-account";
+  }
+
+  private buildX402PaymentRequirements(input: {
+    orderId: string;
+    amount: Prisma.Decimal;
+    asset: string;
+    recipient: string;
+  }): X402FacilitatorPaymentRequirements {
+    const normalizedBase = this.x402Config.paymentResourceBaseUrl.replace(/\/+$/, "");
+    const resource = `${normalizedBase}/api/orders/${input.orderId}/pay`;
+
+    return {
+      scheme: "exact",
+      network: this.x402Config.paymentNetwork,
+      maxAmountRequired: input.amount.toString(),
+      resource,
+      description: `${this.x402Config.paymentDescription} (${input.orderId})`,
+      mimeType: this.x402Config.paymentMimeType,
+      payTo: input.recipient,
+      maxTimeoutSeconds: this.x402Config.paymentMaxTimeoutSeconds,
+      asset: input.asset
+    };
   }
 
   async createPaymentRequirement(orderId: string): Promise<PaymentRequirement> {
@@ -121,7 +155,13 @@ export class PaymentsService {
         recipient: this.getEscrowRecipient(),
         facilitatorId: this.x402Config.facilitatorId,
         requiresSignature: this.x402Config.requireSignedWebhook,
-        signatureMaxAgeSeconds: this.x402Config.signatureMaxAgeSeconds
+        signatureMaxAgeSeconds: this.x402Config.signatureMaxAgeSeconds,
+        x402PaymentRequirements: this.buildX402PaymentRequirements({
+          orderId,
+          amount: existing.amount,
+          asset: existing.asset,
+          recipient: this.getEscrowRecipient()
+        })
       });
     }
 
@@ -159,7 +199,13 @@ export class PaymentsService {
       recipient: this.getEscrowRecipient(),
       facilitatorId: this.x402Config.facilitatorId,
       requiresSignature: this.x402Config.requireSignedWebhook,
-      signatureMaxAgeSeconds: this.x402Config.signatureMaxAgeSeconds
+      signatureMaxAgeSeconds: this.x402Config.signatureMaxAgeSeconds,
+      x402PaymentRequirements: this.buildX402PaymentRequirements({
+        orderId,
+        amount: funding.amount,
+        asset: funding.asset,
+        recipient: this.getEscrowRecipient()
+      })
     });
   }
 
@@ -212,6 +258,12 @@ export class PaymentsService {
       orderId: input.orderId,
       x402PaymentId: input.x402PaymentId,
       signedPayload: input.signedPayload,
+      paymentRequirements: this.buildX402PaymentRequirements({
+        orderId: funding.orderId,
+        amount: funding.amount,
+        asset: funding.asset,
+        recipient: this.getEscrowRecipient()
+      }),
       signature: input.signature,
       payerAccount: input.payerAccount,
       amount: funding.amount.toString(),

@@ -6,6 +6,7 @@ REAL_ORDER_AMOUNT="${REAL_ORDER_AMOUNT:-20.00}"
 REAL_ORDER_CURRENCY="${REAL_ORDER_CURRENCY:-HBAR}"
 REAL_CLIENT_ID="${REAL_CLIENT_ID:-client-live}"
 WORLD_ID_MODE="${WORLD_ID_MODE:-mock}"
+REAL_X402_PAYMENT_HEADER="${REAL_X402_PAYMENT_HEADER:-}"
 
 required_env() {
   local name="$1"
@@ -57,7 +58,7 @@ json_get_or_fail() {
 post_json() {
   local endpoint="$1"
   local payload="$2"
-  curl -sS -X POST "${API_BASE_URL}${endpoint}" \
+  curl -fsS -X POST "${API_BASE_URL}${endpoint}" \
     -H 'Content-Type: application/json' \
     -d "$payload"
 }
@@ -94,7 +95,7 @@ process.stdout.write(`v1=${signature}`);
 ' "$payload" "$timestamp" "$X402_FACILITATOR_ID" "$X402_FACILITATOR_SIGNING_SECRET"
   )"
 
-  curl -sS -X POST "${API_BASE_URL}${endpoint}" \
+  curl -fsS -X POST "${API_BASE_URL}${endpoint}" \
     -H 'Content-Type: application/json' \
     -H "x-x402-facilitator-id: ${X402_FACILITATOR_ID}" \
     -H "x-x402-timestamp: ${timestamp}" \
@@ -105,8 +106,11 @@ process.stdout.write(`v1=${signature}`);
 required_env WORLD_VERIFY_PAYLOAD_FILE
 required_env X402_FACILITATOR_ID
 required_env X402_FACILITATOR_SIGNING_SECRET
-required_env REAL_HEDERA_TX_ID
 required_env REAL_PAYER_ACCOUNT
+
+if [[ -z "${REAL_X402_PAYMENT_HEADER}" ]]; then
+  required_env REAL_HEDERA_TX_ID
+fi
 
 REAL_CLIENT_ACCOUNT="${REAL_CLIENT_ACCOUNT:-${REAL_PAYER_ACCOUNT}}"
 
@@ -201,9 +205,23 @@ PAY_RESP="$(post_json "/api/orders/${ORDER_ID}/pay" '{}')"
 X402_PAYMENT_ID="$(json_get_or_fail 'payment.x402PaymentId' 'Payment requirement creation' "${PAY_RESP}")"
 log "Payment requirement created: x402PaymentId=${X402_PAYMENT_ID}"
 
-FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"${REAL_HEDERA_TX_ID}\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"${REAL_PAYER_ACCOUNT}\",\"amount\":\"${REAL_ORDER_AMOUNT}\",\"asset\":\"${REAL_ORDER_CURRENCY}\"}"
-post_signed_x402_webhook '/api/webhooks/x402' "${FUND_WEBHOOK_PAYLOAD}" >/dev/null
-log "Signed x402 webhook accepted"
+if [[ -n "${REAL_X402_PAYMENT_HEADER}" ]]; then
+  SUBMIT_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"signedPayload\":{\"paymentHeader\":\"${REAL_X402_PAYMENT_HEADER}\"},\"payerAccount\":\"${REAL_PAYER_ACCOUNT}\"}"
+  SUBMIT_RESP="$(post_json "/api/orders/${ORDER_ID}/pay/submit" "${SUBMIT_PAYLOAD}")"
+  SUBMIT_FUNDED="$(json_get_or_fail 'funded' 'Facilitator direct submit' "${SUBMIT_RESP}")"
+
+  if [[ "${SUBMIT_FUNDED}" != "true" ]]; then
+    echo "Facilitator direct submit did not fund the order: ${SUBMIT_RESP}" >&2
+    exit 1
+  fi
+
+  FACILITATOR_TX_ID="$(json_get_or_fail 'hederaTxId' 'Facilitator direct submit tx id' "${SUBMIT_RESP}")"
+  log "Facilitator direct submit accepted: hederaTxId=${FACILITATOR_TX_ID}"
+else
+  FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"${REAL_HEDERA_TX_ID}\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"${REAL_PAYER_ACCOUNT}\",\"amount\":\"${REAL_ORDER_AMOUNT}\",\"asset\":\"${REAL_ORDER_CURRENCY}\"}"
+  post_signed_x402_webhook '/api/webhooks/x402' "${FUND_WEBHOOK_PAYLOAD}" >/dev/null
+  log "Signed x402 webhook accepted"
+fi
 
 post_json "/api/orders/${ORDER_ID}/start" '{}' >/dev/null
 log "Order started"
@@ -221,7 +239,7 @@ log "Proof submitted"
 post_json "/api/orders/${ORDER_ID}/approve" "{\"actorId\":\"${REAL_CLIENT_ID}\"}" >/dev/null
 log "Order approved"
 
-ORDER_FINAL="$(curl -sS "${API_BASE_URL}/api/orders/${ORDER_ID}")"
+ORDER_FINAL="$(curl -fsS "${API_BASE_URL}/api/orders/${ORDER_ID}")"
 ORDER_STATUS="$(json_get_or_fail 'status' 'Order fetch' "${ORDER_FINAL}")"
 
 if [[ "${ORDER_STATUS}" != "APPROVED" ]]; then
@@ -229,7 +247,7 @@ if [[ "${ORDER_STATUS}" != "APPROVED" ]]; then
   exit 1
 fi
 
-AUDIT="$(curl -sS "${API_BASE_URL}/api/orders/${ORDER_ID}/audit")"
+AUDIT="$(curl -fsS "${API_BASE_URL}/api/orders/${ORDER_ID}/audit")"
 TIMELINE_COUNT="$(json_get_or_fail 'timeline.length' 'Audit fetch' "${AUDIT}")"
 log "Audit timeline events: ${TIMELINE_COUNT}"
 
