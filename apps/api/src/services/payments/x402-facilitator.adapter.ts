@@ -40,6 +40,7 @@ type FacilitatorApiResponse = {
   isValid?: boolean;
   approved?: boolean;
   status?: string;
+  transaction?: string;
   hederaTxId?: string;
   hedera_tx_id?: string;
   transactionId?: string;
@@ -48,11 +49,13 @@ type FacilitatorApiResponse = {
   txHash?: string;
   facilitatorId?: string;
   facilitator_id?: string;
+  payer?: string;
   payerAccount?: string;
   payer_account?: string;
   amount?: string;
   asset?: string;
   error?: string;
+  errorReason?: string;
   message?: string;
   details?: {
     txHash?: string;
@@ -69,6 +72,7 @@ function joinUrl(baseUrl: string, path: string): string {
 
 function resolveTxId(payload: FacilitatorApiResponse): string | undefined {
   return (
+    payload.transaction ??
     payload.hederaTxId ??
     payload.hedera_tx_id ??
     payload.transactionId ??
@@ -109,6 +113,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function resolveErrorMessage(payload: FacilitatorApiResponse, fallback: string): string {
   if (typeof payload.error === "string" && payload.error.length > 0) {
     return payload.error;
+  }
+
+  if (typeof payload.errorReason === "string" && payload.errorReason.length > 0) {
+    return payload.errorReason;
   }
 
   if (typeof payload.message === "string" && payload.message.length > 0) {
@@ -319,7 +327,8 @@ export class X402FacilitatorAdapter {
       success: true,
       hederaTxId,
       facilitatorId: payload.facilitatorId ?? payload.facilitator_id ?? this.config.facilitatorId,
-      payerAccount: payload.payerAccount ?? payload.payer_account ?? input.payerAccount,
+      payerAccount:
+        payload.payerAccount ?? payload.payer_account ?? payload.payer ?? input.payerAccount,
       amount: payload.amount ?? input.amount,
       asset: payload.asset ?? input.asset
     };
@@ -378,7 +387,11 @@ export class X402FacilitatorAdapter {
         settle.payload.facilitatorId ??
         settle.payload.facilitator_id ??
         this.config.facilitatorId,
-      payerAccount: settle.payload.payerAccount ?? settle.payload.payer_account ?? input.payerAccount,
+      payerAccount:
+        settle.payload.payerAccount ??
+        settle.payload.payer_account ??
+        settle.payload.payer ??
+        input.payerAccount,
       amount: settle.payload.amount ?? input.amount,
       asset: settle.payload.asset ?? input.asset
     };

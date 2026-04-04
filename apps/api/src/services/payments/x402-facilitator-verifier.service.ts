@@ -26,6 +26,12 @@ type MirrorTransactionsResponse = {
   transactions?: MirrorTransactionRecord[];
 };
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
 function normalizeSignature(value: string): string {
   return value.startsWith("v1=") ? value.slice(3) : value;
 }
@@ -79,6 +85,8 @@ function buildCanonicalPayload(input: {
 
 export class X402FacilitatorVerifierService {
   private readonly config = getX402Config();
+  private readonly mirrorVerifyMaxAttempts = 8;
+  private readonly mirrorVerifyBackoffMs = 1500;
 
   private async verifyHederaTransaction(hederaTxId: string): Promise<void> {
     if (!this.config.verifyHederaTx) {
@@ -91,35 +99,67 @@ export class X402FacilitatorVerifierService {
     }
 
     const baseUrl = this.config.mirrorNodeBaseUrl.replace(/\/+$/, "");
-    const response = await fetchFn(
-      `${baseUrl}/api/v1/transactions/${encodeURIComponent(hederaTxId)}`,
-      {
-        headers: {
-          accept: "application/json"
+    let lastError: AppError | null = null;
+
+    for (let attempt = 1; attempt <= this.mirrorVerifyMaxAttempts; attempt += 1) {
+      const response = await fetchFn(
+        `${baseUrl}/api/v1/transactions/${encodeURIComponent(hederaTxId)}`,
+        {
+          headers: {
+            accept: "application/json"
+          }
         }
+      );
+
+      if (!response.ok) {
+        lastError = new AppError(
+          "Unable to verify Hedera transaction from Mirror Node",
+          502
+        );
+      } else {
+        const payload = (await response.json()) as MirrorTransactionsResponse;
+        const transactions = payload.transactions ?? [];
+        const successTx = transactions.find((tx) => tx.result === "SUCCESS");
+
+        if (successTx) {
+          if (typeof successTx.name === "string" && !successTx.name.includes("CRYPTO")) {
+            throw new AppError("Hedera funding transaction is not a crypto transfer", 409);
+          }
+
+          return;
+        }
+
+        lastError = new AppError("Hedera transaction is not confirmed as SUCCESS", 409);
       }
-    );
 
-    if (!response.ok) {
-      throw new AppError("Unable to verify Hedera transaction from Mirror Node", 502);
+      if (attempt < this.mirrorVerifyMaxAttempts) {
+        await sleep(this.mirrorVerifyBackoffMs);
+      }
     }
 
-    const payload = (await response.json()) as MirrorTransactionsResponse;
-    const transactions = payload.transactions ?? [];
-    const successTx = transactions.find((tx) => tx.result === "SUCCESS");
-
-    if (!successTx) {
-      throw new AppError("Hedera transaction is not confirmed as SUCCESS", 409);
-    }
-
-    if (typeof successTx.name === "string" && !successTx.name.includes("CRYPTO")) {
-      throw new AppError("Hedera funding transaction is not a crypto transfer", 409);
-    }
+    throw lastError ?? new AppError("Unable to verify Hedera transaction from Mirror Node", 502);
   }
 
   async verifyFundingTransactionIfEnabled(hederaTxId: string): Promise<boolean> {
-    await this.verifyHederaTransaction(hederaTxId);
-    return this.config.verifyHederaTx;
+    try {
+      await this.verifyHederaTransaction(hederaTxId);
+      return this.config.verifyHederaTx;
+    } catch (error) {
+      if (!this.config.verifyHederaTx) {
+        return false;
+      }
+
+      if (
+        error instanceof AppError &&
+        (error.statusCode === 502 ||
+          (error.statusCode === 409 &&
+            error.message === "Hedera transaction is not confirmed as SUCCESS"))
+      ) {
+        return false;
+      }
+
+      throw error;
+    }
   }
 
   async verifyFundingWebhookSignature(
