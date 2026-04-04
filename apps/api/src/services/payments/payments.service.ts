@@ -5,6 +5,7 @@ import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 import { getHederaConfig } from "../../config/hedera.config.js";
+import { getX402Config } from "../../config/x402.config.js";
 
 export type PaymentRequirement = {
   orderId: string;
@@ -14,6 +15,16 @@ export type PaymentRequirement = {
   recipient: string;
   facilitatorMode: "hedera-compatible";
   paymentEndpoint: string;
+  facilitator: {
+    id: string | null;
+    requiresSignature: boolean;
+    signatureAlgorithm: "hmac-sha256";
+    signatureHeader: "x-x402-signature";
+    timestampHeader: "x-x402-timestamp";
+    facilitatorHeader: "x-x402-facilitator-id";
+    timestampToleranceSeconds: number;
+    canonicalPayloadTemplate: string;
+  };
 };
 
 export type FundingWebhookInput = {
@@ -33,6 +44,9 @@ function formatRequirement(input: {
   amount: Prisma.Decimal;
   asset: string;
   recipient: string;
+  facilitatorId?: string;
+  requiresSignature: boolean;
+  signatureMaxAgeSeconds: number;
 }): PaymentRequirement {
   return {
     orderId: input.orderId,
@@ -41,13 +55,25 @@ function formatRequirement(input: {
     asset: input.asset,
     recipient: input.recipient,
     facilitatorMode: "hedera-compatible",
-    paymentEndpoint: `/api/webhooks/x402`
+    paymentEndpoint: `/api/webhooks/x402`,
+    facilitator: {
+      id: input.facilitatorId ?? null,
+      requiresSignature: input.requiresSignature,
+      signatureAlgorithm: "hmac-sha256",
+      signatureHeader: "x-x402-signature",
+      timestampHeader: "x-x402-timestamp",
+      facilitatorHeader: "x-x402-facilitator-id",
+      timestampToleranceSeconds: input.signatureMaxAgeSeconds,
+      canonicalPayloadTemplate:
+        "{timestamp}.{x402PaymentId}|{orderId}|{success}|{hederaTxId}|{facilitatorId}|{payerAccount}|{amount}|{asset}"
+    }
   };
 }
 
 export class PaymentsService {
   private readonly hcsAuditService = new HcsAuditService();
   private readonly hederaConfig = getHederaConfig();
+  private readonly x402Config = getX402Config();
 
   private getEscrowRecipient(): string {
     return this.hederaConfig.defaultEscrowAccountId ?? "platform-held-escrow-account";
@@ -78,7 +104,10 @@ export class PaymentsService {
         x402PaymentId: existing.x402PaymentId,
         amount: existing.amount,
         asset: existing.asset,
-        recipient: this.getEscrowRecipient()
+        recipient: this.getEscrowRecipient(),
+        facilitatorId: this.x402Config.facilitatorId,
+        requiresSignature: this.x402Config.requireSignedWebhook,
+        signatureMaxAgeSeconds: this.x402Config.signatureMaxAgeSeconds
       });
     }
 
@@ -113,7 +142,10 @@ export class PaymentsService {
       x402PaymentId: funding.x402PaymentId,
       amount: funding.amount,
       asset: funding.asset,
-      recipient: this.getEscrowRecipient()
+      recipient: this.getEscrowRecipient(),
+      facilitatorId: this.x402Config.facilitatorId,
+      requiresSignature: this.x402Config.requireSignedWebhook,
+      signatureMaxAgeSeconds: this.x402Config.signatureMaxAgeSeconds
     });
   }
 
