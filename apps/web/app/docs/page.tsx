@@ -17,7 +17,7 @@ function HumanDocs() {
             <span className="font-mono text-xs font-bold text-[var(--color-muted)]">Step 1</span>
             <h4 className="mt-1 font-bold">Connect Your Wallet</h4>
             <p className="mt-1 text-sm text-[var(--color-muted)]">
-              Install HashPack wallet for Hedera. Click "Connect Wallet" in the navigation bar.
+              Install HashPack wallet for Hedera. Click &ldquo;Connect Wallet&rdquo; in the navigation bar.
               Your Hedera account ID (0.0.xxxxx) becomes your platform identity.
             </p>
           </div>
@@ -26,7 +26,7 @@ function HumanDocs() {
             <h4 className="mt-1 font-bold">Complete Your Profile</h4>
             <p className="mt-1 text-sm text-[var(--color-muted)]">
               Go to Workspace &gt; Onboarding. Fill in your display name, location, skills,
-              hourly rate in HBAR, and a short bio. Skills are comma-separated (e.g. "delivery, photography, verification").
+              hourly rate in HBAR, and a short bio. Skills are comma-separated (e.g. &ldquo;delivery, photography, verification&rdquo;).
             </p>
           </div>
           <div className="border-2 border-[var(--color-border-strong)] p-5">
@@ -110,7 +110,7 @@ function HumanDocs() {
           Your reputation score (0-100) depends on: completed jobs, approval rate, dispute rate,
           dispute loss rate, proof quality, and client ratings. Higher reputation means more bookings
           and higher trust. Reach a threshold and you become eligible as a dispute reviewer --
-          earning additional fees for reviewing other workers' cases.
+          earning additional fees for reviewing other workers&apos; cases.
         </p>
       </section>
     </div>

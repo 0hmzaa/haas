@@ -2,16 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Button } from "../../../../../components/button";
 import { Card } from "../../../../../components/card";
+import { OrderTimeline } from "../../../../../components/order-timeline";
 import { PageContainer } from "../../../../../components/page-container";
 import { StatusPill } from "../../../../../components/status-pill";
+import { SkeletonCard } from "../../../../../components/skeleton";
 import { WalletSessionPanel } from "../../../../../components/wallet-session-panel";
 import {
   getDispute,
   getOrderById,
   respondDispute,
   startOrder,
-  uploadProof
+  uploadProof,
 } from "../../../../../lib/api-client";
 import type { DisputeDetail, OrderSummary } from "../../../../../lib/models";
 import { useSession } from "../../../../../lib/session-context";
@@ -30,6 +33,7 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     params.then((resolved) => setOrderId(resolved.id));
@@ -54,22 +58,19 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
       }
       return;
     }
-    refresh(orderId).catch((reason: unknown) =>
-      setError(reason instanceof Error ? reason.message : "Unable to load order")
-    );
+    setLoading(true);
+    refresh(orderId)
+      .catch((reason: unknown) =>
+        setError(reason instanceof Error ? reason.message : "Unable to load order")
+      )
+      .finally(() => setLoading(false));
   }, [orderId, session?.walletAddress]);
 
   const onStart = async () => {
     try {
-      if (!orderId) {
-        return;
-      }
-      if (!session?.workerId) {
-        throw new Error("Connect a wallet linked to a worker profile");
-      }
-      if (order && order.workerId !== session.workerId) {
-        throw new Error("This task is assigned to another worker");
-      }
+      if (!orderId) return;
+      if (!session?.workerId) throw new Error("Connect a wallet linked to a worker profile");
+      if (order && order.workerId !== session.workerId) throw new Error("This task is assigned to another worker");
       setError(null);
       const payload = await startOrder(orderId);
       setOrder(payload);
@@ -81,20 +82,11 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
 
   const onSubmitProof = async () => {
     try {
-      if (!orderId || !file) {
-        throw new Error("Select a proof file first");
-      }
-      if (!session?.workerId) {
-        throw new Error("Connect a wallet linked to a worker profile");
-      }
-      if (order && order.workerId !== session.workerId) {
-        throw new Error("This task is assigned to another worker");
-      }
+      if (!orderId || !file) throw new Error("Select a proof file first");
+      if (!session?.workerId) throw new Error("Connect a wallet linked to a worker profile");
+      if (order && order.workerId !== session.workerId) throw new Error("This task is assigned to another worker");
       setError(null);
-      await uploadProof(orderId, {
-        file,
-        summary: summary.trim() || "Proof submitted"
-      });
+      await uploadProof(orderId, { file, summary: summary.trim() || "Proof submitted" });
       setSummary("");
       setFile(null);
       await refresh(orderId);
@@ -106,18 +98,10 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
 
   const onRespondDispute = async () => {
     try {
-      if (!orderId) {
-        return;
-      }
-      if (!session?.workerId) {
-        throw new Error("Connect a wallet linked to a worker profile");
-      }
-      if (order && order.workerId !== session.workerId) {
-        throw new Error("This task is assigned to another worker");
-      }
-      if (!workerStatement.trim()) {
-        throw new Error("Worker statement is required");
-      }
+      if (!orderId) return;
+      if (!session?.workerId) throw new Error("Connect a wallet linked to a worker profile");
+      if (order && order.workerId !== session.workerId) throw new Error("This task is assigned to another worker");
+      if (!workerStatement.trim()) throw new Error("Worker statement is required");
       await respondDispute(orderId, workerStatement.trim(), session?.verifiedHumanId ?? undefined);
       await refresh(orderId);
       setMessage("Dispute response submitted");
@@ -128,107 +112,106 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
 
   return (
     <PageContainer title="Task Detail" subtitle={orderId ? `Order ${orderId}` : "Order"}>
-      <WalletSessionPanel required />
-
       {!session?.walletAddress ? (
-        <Card>
-          <p className="text-sm text-[var(--color-muted)]">
-            Connect HashPack to access worker task details.
-          </p>
-        </Card>
+        <WalletSessionPanel required />
       ) : null}
 
       {error ? (
-        <Card>
-          <p className="text-sm text-[var(--color-danger)]">{error}</p>
+        <Card variant="flat">
+          <p className="text-sm font-semibold text-[var(--color-danger)]">{error}</p>
         </Card>
       ) : null}
       {message ? (
-        <Card>
-          <p className="text-sm text-[var(--color-success)]">{message}</p>
+        <Card variant="flat">
+          <p className="text-sm font-semibold text-[var(--color-success)]">{message}</p>
         </Card>
       ) : null}
 
-      {!session?.walletAddress ? null : !order ? (
-        <Card>
-          <p className="text-sm text-[var(--color-muted)]">Loading order...</p>
-        </Card>
-      ) : (
+      {loading && session?.walletAddress ? <SkeletonCard /> : null}
+
+      {!loading && session?.walletAddress && order ? (
         <>
+          <Card variant="flat">
+            <OrderTimeline status={order.status} />
+          </Card>
+
           <Card>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold">{order.title}</h2>
+                <h2 className="text-lg font-bold">{order.title}</h2>
                 <p className="mt-1 text-sm text-[var(--color-muted)]">{order.instructions}</p>
                 <p className="mt-2 text-xs text-[var(--color-muted)]">
-                  Amount: {order.amount} {order.currency}
+                  Amount: <span className="font-bold text-[var(--color-text)]">{order.amount} {order.currency}</span>
                 </p>
               </div>
               <StatusPill status={order.status} />
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={onStart}
-                className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold"
-              >
-                Start Order
-              </button>
+              {order.status === "FUNDED" ? (
+                <Button size="sm" onClick={onStart}>Start Order</Button>
+              ) : null}
               <Link
                 href={`/app/orders/${order.id}/audit`}
-                className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold"
+                className="border-2 border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-bold shadow-[2px_2px_0_var(--color-border-strong)]"
               >
                 Open Audit
               </Link>
             </div>
           </Card>
 
-          <Card>
-            <h3 className="text-base font-semibold">Submit Proof</h3>
-            <div className="mt-3 grid gap-3">
-              <input
-                type="file"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              />
-              <textarea
-                value={summary}
-                onChange={(event) => setSummary(event.target.value)}
-                placeholder="Proof summary"
-                className="min-h-24"
-              />
-              <button
-                type="button"
-                onClick={onSubmitProof}
-                className="rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)]"
-              >
-                Upload Proof
-              </button>
-            </div>
-          </Card>
+          {order.status === "IN_PROGRESS" ? (
+            <Card>
+              <h3 className="text-base font-bold">Submit Proof</h3>
+              <div className="mt-4 grid gap-4">
+                <div>
+                  <label className="text-xs font-bold text-[var(--color-muted)]">Proof File</label>
+                  <input
+                    type="file"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    className="mt-1 w-full"
+                  />
+                  {file ? (
+                    <p className="mt-1 text-xs text-[var(--color-muted)]">
+                      Selected: <span className="font-bold text-[var(--color-text)]">{file.name}</span> ({(file.size / 1024).toFixed(1)} KB)
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[var(--color-muted)]">Summary</label>
+                  <textarea
+                    value={summary}
+                    onChange={(e) => setSummary(e.target.value)}
+                    placeholder="Describe what the proof shows..."
+                    className="mt-1 min-h-24 w-full"
+                  />
+                </div>
+                <Button onClick={onSubmitProof}>Upload Proof</Button>
+              </div>
+            </Card>
+          ) : null}
 
           {dispute ? (
             <Card>
-              <h3 className="text-base font-semibold">Dispute Response</h3>
-              <p className="mt-1 text-sm text-[var(--color-muted)]">
-                Reason: {dispute.reasonCode} — {dispute.clientStatement}
+              <h3 className="text-base font-bold text-[var(--color-danger)]">Dispute Response</h3>
+              <p className="mt-2 text-sm text-[var(--color-muted)]">
+                Reason: <span className="font-bold">{dispute.reasonCode}</span> -- {dispute.clientStatement}
               </p>
-              <textarea
-                value={workerStatement}
-                onChange={(event) => setWorkerStatement(event.target.value)}
-                placeholder="Provide your response for reviewers"
-                className="mt-3 min-h-24"
-              />
-              <button
-                type="button"
-                onClick={onRespondDispute}
-                className="mt-3 rounded-xl border border-[var(--color-border)] px-4 py-2 text-sm font-semibold"
-              >
+              <div className="mt-4">
+                <label className="text-xs font-bold text-[var(--color-muted)]">Your Response</label>
+                <textarea
+                  value={workerStatement}
+                  onChange={(e) => setWorkerStatement(e.target.value)}
+                  placeholder="Explain your side for the reviewers..."
+                  className="mt-1 min-h-24 w-full"
+                />
+              </div>
+              <Button variant="secondary" className="mt-3" onClick={onRespondDispute}>
                 Submit Dispute Response
-              </button>
+              </Button>
             </Card>
           ) : null}
         </>
-      )}
+      ) : null}
     </PageContainer>
   );
 }

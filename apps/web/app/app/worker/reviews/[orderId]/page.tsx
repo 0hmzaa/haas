@@ -5,12 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Card } from "../../../../../components/card";
 import { PageContainer } from "../../../../../components/page-container";
 import { StatusPill } from "../../../../../components/status-pill";
+import { SkeletonCard } from "../../../../../components/skeleton";
 import { WalletSessionPanel } from "../../../../../components/wallet-session-panel";
 import {
   getDispute,
   getOrderById,
   getProofs,
-  voteDispute
+  voteDispute,
 } from "../../../../../lib/api-client";
 import type { DisputeDetail, OrderSummary, ProofArtifact } from "../../../../../lib/models";
 import { useSession } from "../../../../../lib/session-context";
@@ -20,10 +21,25 @@ type ReviewOrderPageProps = {
 };
 
 const VOTE_OPTIONS = [
-  "RELEASE_TO_WORKER",
-  "SPLIT_PAYMENT",
-  "REFUND_CLIENT"
-] as const;
+  {
+    value: "RELEASE_TO_WORKER" as const,
+    title: "Release to Worker",
+    desc: "The work was completed satisfactorily. Release full payment.",
+    color: "border-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white",
+  },
+  {
+    value: "SPLIT_PAYMENT" as const,
+    title: "Split Payment",
+    desc: "Partial completion. Split funds between worker and client.",
+    color: "border-[var(--color-warning)] hover:bg-[var(--color-warning)] hover:text-white",
+  },
+  {
+    value: "REFUND_CLIENT" as const,
+    title: "Refund Client",
+    desc: "Work was not completed or unacceptable. Full refund.",
+    color: "border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white",
+  },
+];
 
 export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
   const { session } = useSession();
@@ -31,7 +47,7 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [dispute, setDispute] = useState<DisputeDetail | null>(null);
   const [proofs, setProofs] = useState<ProofArtifact[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [submittingVote, setSubmittingVote] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,106 +57,54 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
   }, [params]);
 
   const refresh = async (id: string) => {
-    const [orderPayload, disputePayload, proofsPayload] = await Promise.all([
-      getOrderById(id),
-      getDispute(id),
-      getProofs(id)
-    ]);
-
-    setOrder(orderPayload);
-    setDispute(disputePayload);
-    setProofs(proofsPayload.items);
+    const [o, d, p] = await Promise.all([getOrderById(id), getDispute(id), getProofs(id)]);
+    setOrder(o);
+    setDispute(d);
+    setProofs(p.items);
   };
 
   useEffect(() => {
     if (!orderId || !session?.walletAddress) {
-      if (!session?.walletAddress) {
-        setOrder(null);
-        setDispute(null);
-        setProofs([]);
-      }
+      if (!session?.walletAddress) { setOrder(null); setDispute(null); setProofs([]); }
       return;
     }
-
     setLoading(true);
     setError(null);
     refresh(orderId)
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : "Unable to load review case")
-      )
+      .catch((r: unknown) => setError(r instanceof Error ? r.message : "Unable to load review case"))
       .finally(() => setLoading(false));
   }, [orderId, session?.walletAddress]);
 
   const reviewerId = session?.verifiedHumanId ?? "";
-  const reviewerAssigned =
-    !!reviewerId && !!dispute?.assignedReviewerIds.includes(reviewerId);
-  const reviewerVoted =
-    !!reviewerId && !!dispute?.votes.some((vote) => vote.reviewerId === reviewerId);
+  const reviewerAssigned = !!reviewerId && !!dispute?.assignedReviewerIds.includes(reviewerId);
+  const reviewerVoted = !!reviewerId && !!dispute?.votes.some((v) => v.reviewerId === reviewerId);
 
   const voteTally = useMemo(() => {
-    if (!dispute) {
-      return {
-        release: 0,
-        split: 0,
-        refund: 0
-      };
-    }
-
+    if (!dispute) return { release: 0, split: 0, refund: 0 };
     return dispute.votes.reduce(
-      (acc, vote) => {
-        if (vote.vote === "RELEASE_TO_WORKER") {
-          acc.release += 1;
-        } else if (vote.vote === "SPLIT_PAYMENT") {
-          acc.split += 1;
-        } else if (vote.vote === "REFUND_CLIENT") {
-          acc.refund += 1;
-        }
-
+      (acc, v) => {
+        if (v.vote === "RELEASE_TO_WORKER") acc.release += 1;
+        else if (v.vote === "SPLIT_PAYMENT") acc.split += 1;
+        else if (v.vote === "REFUND_CLIENT") acc.refund += 1;
         return acc;
       },
-      {
-        release: 0,
-        split: 0,
-        refund: 0
-      }
+      { release: 0, split: 0, refund: 0 }
     );
   }, [dispute]);
 
-  const submitVote = async (vote: (typeof VOTE_OPTIONS)[number]) => {
+  const submitVote = async (vote: "RELEASE_TO_WORKER" | "SPLIT_PAYMENT" | "REFUND_CLIENT") => {
     try {
-      if (!orderId) {
-        return;
-      }
-
-      if (!reviewerId) {
-        throw new Error("Connect a wallet session with verified reviewer identity");
-      }
-
-      if (!reviewerAssigned) {
-        throw new Error("Current reviewer is not assigned to this dispute");
-      }
-
-      if (reviewerVoted) {
-        throw new Error("Reviewer has already submitted a vote for this dispute");
-      }
-
+      if (!orderId || !reviewerId) throw new Error("Connect with verified reviewer identity");
+      if (!reviewerAssigned) throw new Error("Not assigned to this dispute");
+      if (reviewerVoted) throw new Error("Already voted");
       setSubmittingVote(true);
       setError(null);
       setMessage(null);
-
-      const result = await voteDispute(orderId, {
-        reviewerId,
-        vote
-      });
-
+      const result = await voteDispute(orderId, { reviewerId, vote });
       await refresh(orderId);
-      if (result.resolved) {
-        setMessage(`Vote submitted. Case resolved: ${result.resolution}.`);
-      } else {
-        setMessage("Vote submitted. Waiting for other reviewers.");
-      }
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to submit reviewer vote");
+      setMessage(result.resolved ? `Resolved: ${result.resolution}` : "Vote submitted. Waiting for others.");
+    } catch (r) {
+      setError(r instanceof Error ? r.message : "Unable to vote");
     } finally {
       setSubmittingVote(false);
     }
@@ -148,129 +112,105 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
 
   return (
     <PageContainer title="Review Case" subtitle={orderId ? `Order ${orderId}` : "Dispute review"}>
-      <WalletSessionPanel required />
+      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
 
-      {!session?.walletAddress ? (
-        <Card>
-          <p className="text-sm text-[var(--color-muted)]">
-            Connect HashPack to access review cases.
-          </p>
-        </Card>
-      ) : null}
+      {error ? <Card variant="flat"><p className="text-sm font-semibold text-[var(--color-danger)]">{error}</p></Card> : null}
+      {message ? <Card variant="flat"><p className="text-sm font-semibold text-[var(--color-success)]">{message}</p></Card> : null}
 
-      {session?.walletAddress && loading ? (
-        <Card>
-          <p className="text-sm text-[var(--color-muted)]">Loading review case...</p>
-        </Card>
-      ) : null}
+      {loading && session?.walletAddress ? <SkeletonCard /> : null}
 
-      {error ? (
-        <Card>
-          <p className="text-sm text-[var(--color-danger)]">{error}</p>
-        </Card>
-      ) : null}
-
-      {message ? (
-        <Card>
-          <p className="text-sm text-[var(--color-success)]">{message}</p>
-        </Card>
-      ) : null}
-
-      {session?.walletAddress && order ? (
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">{order.title}</h2>
-              <p className="mt-1 text-sm text-[var(--color-muted)]">{order.instructions}</p>
+      {!loading && session?.walletAddress && order ? (
+        <>
+          <Card>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold">{order.title}</h2>
+                <p className="mt-1 text-sm text-[var(--color-muted)]">{order.instructions}</p>
+              </div>
+              <StatusPill status={order.status} />
             </div>
-            <StatusPill status={order.status} />
-          </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href={`/app/orders/${order.id}/audit`} className="border-2 border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-bold shadow-[2px_2px_0_var(--color-border-strong)]">
+                Audit
+              </Link>
+              <Link href={`/app/client/orders/${order.id}`} className="border-2 border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-bold shadow-[2px_2px_0_var(--color-border-strong)]">
+                Client View
+              </Link>
+            </div>
+          </Card>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              href={`/app/orders/${order.id}/audit`}
-              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold"
-            >
-              Open Audit
-            </Link>
-            <Link
-              href={`/app/client/orders/${order.id}`}
-              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold"
-            >
-              Open Client View
-            </Link>
-          </div>
-        </Card>
-      ) : null}
+          {dispute ? (
+            <Card>
+              <h3 className="text-base font-bold">Dispute Context</h3>
+              <p className="mt-2 text-sm text-[var(--color-muted)]">
+                <span className="font-bold">Reason:</span> {dispute.reasonCode} -- {dispute.clientStatement}
+              </p>
+              <p className="mt-1 text-sm text-[var(--color-muted)]">
+                <span className="font-bold">Worker:</span> {dispute.workerStatement || "No response yet."}
+              </p>
 
-      {session?.walletAddress && dispute ? (
-        <Card>
-          <h3 className="text-base font-semibold">Dispute Context</h3>
-          <p className="mt-2 text-sm text-[var(--color-muted)]">
-            Reason: {dispute.reasonCode} · {dispute.clientStatement}
-          </p>
-          <p className="mt-1 text-sm text-[var(--color-muted)]">
-            Worker statement: {dispute.workerStatement || "Not provided yet."}
-          </p>
+              <div className="mt-4 flex gap-4 text-xs font-bold">
+                <span className="text-[var(--color-success)]">Release: {voteTally.release}</span>
+                <span className="text-[var(--color-warning)]">Split: {voteTally.split}</span>
+                <span className="text-[var(--color-danger)]">Refund: {voteTally.refund}</span>
+              </div>
 
-          <div className="mt-3 grid gap-2 text-xs text-[var(--color-muted)]">
-            <p>
-              Assigned reviewers: {dispute.assignedReviewerIds.join(", ")}
-            </p>
-            <p>
-              Votes: RELEASE {voteTally.release} · SPLIT {voteTally.split} · REFUND {voteTally.refund}
-            </p>
-            <p>
-              Resolution: {dispute.resolution ?? "Pending"}
-            </p>
-          </div>
-
-          <div className="mt-4 grid gap-2 md:grid-cols-3">
-            {VOTE_OPTIONS.map((vote) => (
-              <button
-                key={vote}
-                type="button"
-                onClick={() => submitVote(vote)}
-                disabled={submittingVote || !reviewerAssigned || reviewerVoted || dispute.status === "RESOLVED"}
-                className="rounded-xl border border-[var(--color-border)] px-3 py-2 text-xs font-semibold disabled:opacity-50"
-              >
-                {vote}
-              </button>
-            ))}
-          </div>
-
-          {!reviewerAssigned ? (
-            <p className="mt-2 text-xs text-[var(--color-warning)]">
-              Current reviewer identity is not assigned to this case.
-            </p>
+              {dispute.resolution ? (
+                <p className="mt-3 text-sm font-bold">Resolution: {dispute.resolution.replace(/_/g, " ")}</p>
+              ) : null}
+            </Card>
           ) : null}
-          {reviewerVoted ? (
-            <p className="mt-2 text-xs text-[var(--color-muted)]">Vote already submitted by this reviewer.</p>
-          ) : null}
-        </Card>
-      ) : null}
 
-      {session?.walletAddress ? (
-        <Card>
-          <h3 className="text-base font-semibold">Proof Artifacts for Review</h3>
-          {proofs.length === 0 ? (
-            <p className="mt-2 text-sm text-[var(--color-muted)]">No proof artifacts attached.</p>
-          ) : (
-            <div className="mt-3 grid gap-2">
-              {proofs.map((proof) => (
-                <div
-                  key={proof.id}
-                  className="rounded-xl border border-[var(--color-border)] p-3 text-xs text-[var(--color-muted)]"
+          {/* Vote cards */}
+          {dispute && !reviewerVoted && reviewerAssigned && dispute.status !== "RESOLVED" ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              {VOTE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => submitVote(opt.value)}
+                  disabled={submittingVote}
+                  className={`border-2 bg-[var(--color-surface)] p-5 text-left transition-all disabled:opacity-50 ${opt.color} shadow-[4px_4px_0_var(--color-border-strong)] hover:shadow-[2px_2px_0_var(--color-border-strong)] hover:translate-x-[2px] hover:translate-y-[2px]`}
                 >
-                  <p className="font-semibold text-[var(--color-text)]">{proof.originalName}</p>
-                  <p>SHA256: {proof.sha256Hash}</p>
-                  <p>Uploaded: {new Date(proof.uploadedAt).toISOString()}</p>
-                  <p>Storage: {proof.localPath}</p>
-                </div>
+                  <h4 className="text-base font-bold">{opt.title}</h4>
+                  <p className="mt-2 text-sm">{opt.desc}</p>
+                </button>
               ))}
             </div>
-          )}
-        </Card>
+          ) : null}
+
+          {!reviewerAssigned && session?.walletAddress ? (
+            <Card variant="flat">
+              <p className="text-xs font-semibold text-[var(--color-warning)]">
+                Your reviewer identity is not assigned to this case.
+              </p>
+            </Card>
+          ) : null}
+
+          {reviewerVoted ? (
+            <Card variant="flat">
+              <p className="text-xs text-[var(--color-muted)]">Vote already submitted.</p>
+            </Card>
+          ) : null}
+
+          {/* Proof artifacts */}
+          <Card>
+            <h3 className="text-base font-bold">Proof Artifacts</h3>
+            {proofs.length === 0 ? (
+              <p className="mt-2 text-sm text-[var(--color-muted)]">No proof artifacts.</p>
+            ) : (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {proofs.map((proof) => (
+                  <div key={proof.id} className="border-2 border-[var(--color-border)] p-3 text-xs text-[var(--color-muted)]">
+                    <p className="font-bold text-[var(--color-text)]">{proof.originalName}</p>
+                    <p className="mt-1 font-mono">SHA256: {proof.sha256Hash.slice(0, 16)}...</p>
+                    <p>Uploaded: {new Date(proof.uploadedAt).toLocaleString()}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </>
       ) : null}
     </PageContainer>
   );

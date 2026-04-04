@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Badge } from "../../components/badge";
+import { Button } from "../../components/button";
 import { Card } from "../../components/card";
 import { PageContainer } from "../../components/page-container";
+import { SkeletonCard } from "../../components/skeleton";
 import { listWorkers } from "../../lib/api-client";
 import type { WorkerProfile } from "../../lib/models";
 
@@ -19,7 +22,7 @@ export default function WorkersPage() {
     () => ({
       country: country.trim() || undefined,
       city: city.trim() || undefined,
-      skill: skill.trim() || undefined
+      skill: skill.trim() || undefined,
     }),
     [country, city, skill]
   );
@@ -30,28 +33,18 @@ export default function WorkersPage() {
     const load = async () => {
       setLoading(true);
       setError(null);
-
       try {
         const response = await listWorkers(filters);
-        if (mounted) {
-          setWorkers(response.items);
-        }
+        if (mounted) setWorkers(response.items);
       } catch (reason) {
-        if (mounted) {
-          setError(reason instanceof Error ? reason.message : "Unable to load workers");
-        }
+        if (mounted) setError(reason instanceof Error ? reason.message : "Unable to load workers");
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     };
 
     void load();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [filters]);
 
   return (
@@ -59,75 +52,87 @@ export default function WorkersPage() {
       title="Workers"
       subtitle="Find one verified human for one scoped real-world task."
       action={
-        <Link
-          href="/app/worker/onboarding"
-          className="rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)]"
-        >
-          Become a Worker
+        <Link href="/app/worker/onboarding">
+          <Button size="sm">Become a Worker</Button>
         </Link>
       }
     >
-      <Card className="grid gap-3 md:grid-cols-3">
-        <input
-          value={country}
-          onChange={(event) => setCountry(event.target.value)}
-          placeholder="Country"
-        />
-        <input value={city} onChange={(event) => setCity(event.target.value)} placeholder="City" />
-        <input value={skill} onChange={(event) => setSkill(event.target.value)} placeholder="Skill" />
+      <Card variant="flat">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div>
+            <label className="text-xs font-bold text-[var(--color-muted)]">Country</label>
+            <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="France" className="mt-1 w-full" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-[var(--color-muted)]">City</label>
+            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Cannes" className="mt-1 w-full" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-[var(--color-muted)]">Skill</label>
+            <input value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="delivery" className="mt-1 w-full" />
+          </div>
+        </div>
       </Card>
 
       {error ? (
-        <Card>
-          <p className="text-sm text-[var(--color-danger)]">{error}</p>
+        <Card variant="flat">
+          <p className="text-sm font-semibold text-[var(--color-danger)]">{error}</p>
         </Card>
       ) : null}
 
       {loading ? (
-        <Card>
-          <p className="text-sm text-[var(--color-muted)]">Loading workers...</p>
-        </Card>
+        <div className="grid gap-3 md:grid-cols-2">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
       ) : null}
 
       {!loading && workers.length === 0 ? (
-        <Card>
-          <p className="text-sm text-[var(--color-muted)]">No workers found with current filters.</p>
+        <Card variant="flat">
+          <p className="text-sm font-semibold text-[var(--color-muted)]">No workers found with current filters.</p>
         </Card>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {workers.map((worker) => (
-          <Card key={worker.id}>
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h2 className="text-base font-semibold text-[var(--color-text)]">
-                  {worker.displayName}
-                </h2>
-                <p className="text-xs text-[var(--color-muted)]">
-                  {[worker.city, worker.country].filter(Boolean).join(", ") || "Location not set"}
-                </p>
+      {!loading ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          {workers.map((worker) => (
+            <Card key={worker.id}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-base font-bold">{worker.displayName}</h2>
+                  <p className="text-xs text-[var(--color-muted)]">
+                    {[worker.city, worker.country].filter(Boolean).join(", ") || "Location not set"}
+                  </p>
+                </div>
+                <span className="border-2 border-[var(--color-border-strong)] px-2 py-0.5 text-xs font-black">
+                  {worker.ratingAvg.toFixed(1)}
+                </span>
               </div>
-              <span className="rounded-full bg-stone-200 px-2 py-1 text-xs font-semibold text-stone-900">
-                ⭐ {worker.ratingAvg.toFixed(1)}
-              </span>
-            </div>
-            <p className="mt-2 line-clamp-2 text-sm text-[var(--color-muted)]">
-              {worker.bio || "No profile description yet."}
-            </p>
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-[var(--color-text)]">
-                {worker.baseRate} HBAR / hour
+              <p className="mt-2 line-clamp-2 text-sm text-[var(--color-muted)]">
+                {worker.bio || "No profile description yet."}
               </p>
-              <Link
-                href={`/workers/${worker.id}`}
-                className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text)]"
-              >
-                View Profile
-              </Link>
-            </div>
-          </Card>
-        ))}
-      </div>
+              {Array.isArray(worker.skills) && worker.skills.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(worker.skills as string[]).slice(0, 4).map((s) => (
+                    <Badge key={s} variant="outline">{s}</Badge>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-sm font-bold">{worker.baseRate} HBAR / hour</p>
+                <Link
+                  href={`/workers/${worker.id}`}
+                  className="border-2 border-[var(--color-border-strong)] px-3 py-1.5 text-xs font-bold shadow-[2px_2px_0_var(--color-border-strong)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
+                >
+                  View Profile
+                </Link>
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : null}
     </PageContainer>
   );
 }
