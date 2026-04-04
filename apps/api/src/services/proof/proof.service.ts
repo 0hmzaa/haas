@@ -78,9 +78,6 @@ export class ProofService {
       throw new AppError("Proof can only be submitted for IN_PROGRESS orders", 409);
     }
 
-    // Every timeout schedule must be cancellable, which requires an admin key.
-    this.scheduledReleaseService.ensureAdminKeyConfigured();
-
     let storageRoot = getProofStorageRoot();
     let orderDir = path.join(storageRoot, input.orderId);
 

@@ -4,7 +4,7 @@ import { AppError } from "../../lib/app-error.js";
 import { HederaRuntimeService } from "./hedera-runtime.service.js";
 
 export type AutoReleaseSchedule = {
-  scheduleId: string;
+  scheduleId: string | null;
   releaseAt: Date;
   scheduleCreateTxId: string | null;
 };
@@ -44,11 +44,50 @@ export class ScheduledReleaseService {
     proofSubmittedAt: Date;
     reviewWindowHours: number;
   }): Promise<AutoReleaseSchedule> {
-    getAdminKeyOrThrow();
+    if (input.reviewWindowHours < 0) {
+      throw new AppError("reviewWindowHours must be >= 0", 400);
+    }
 
-    const releaseAt = new Date(
-      input.proofSubmittedAt.getTime() + input.reviewWindowHours * 60 * 60 * 1000
-    );
+    const releaseAt =
+      input.reviewWindowHours === 0
+        ? new Date(input.proofSubmittedAt)
+        : new Date(
+            input.proofSubmittedAt.getTime() + input.reviewWindowHours * 60 * 60 * 1000
+          );
+
+    const hederaConfig = this.hederaRuntime.getConfig();
+
+    if (input.reviewWindowHours === 0) {
+      await prisma.hederaOrderLedger.upsert({
+        where: { orderId: input.orderId },
+        update: {
+          scheduleId: null,
+          hederaNetwork: hederaConfig.network,
+          escrowAccountId: hederaConfig.defaultEscrowAccountId
+        },
+        create: {
+          orderId: input.orderId,
+          scheduleId: null,
+          hederaNetwork: hederaConfig.network,
+          escrowAccountId: hederaConfig.defaultEscrowAccountId
+        }
+      });
+
+      await prisma.order.update({
+        where: { id: input.orderId },
+        data: {
+          scheduleId: null
+        }
+      });
+
+      return {
+        scheduleId: null,
+        releaseAt,
+        scheduleCreateTxId: null
+      };
+    }
+
+    getAdminKeyOrThrow();
 
     let scheduleId = `${LOCAL_SCHEDULE_PREFIX}${randomUUID()}`;
     let scheduleCreateTxId: string | null = null;
@@ -105,8 +144,6 @@ export class ScheduledReleaseService {
       scheduleId = created.scheduleId;
       scheduleCreateTxId = created.txId;
     }
-
-    const hederaConfig = this.hederaRuntime.getConfig();
 
     await prisma.hederaOrderLedger.upsert({
       where: { orderId: input.orderId },

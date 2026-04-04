@@ -58,6 +58,12 @@ export class OrdersService {
   private readonly hcsAuditService = new HcsAuditService();
 
   async createOrder(input: CreateOrderInput) {
+    if (input.reviewWindowHours !== undefined) {
+      if (!Number.isInteger(input.reviewWindowHours) || input.reviewWindowHours < 0) {
+        throw new AppError("reviewWindowHours must be an integer >= 0", 400);
+      }
+    }
+
     const worker = await prisma.workerProfile.findUnique({
       where: { id: input.workerId }
     });

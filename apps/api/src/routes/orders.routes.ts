@@ -69,6 +69,16 @@ router.post("/", async (req, res, next) => {
       throw new AppError("amount is required as a decimal string", 400);
     }
 
+    if (req.body?.reviewWindowHours !== undefined) {
+      if (
+        typeof req.body.reviewWindowHours !== "number" ||
+        !Number.isInteger(req.body.reviewWindowHours) ||
+        req.body.reviewWindowHours < 0
+      ) {
+        throw new AppError("reviewWindowHours must be an integer >= 0", 400);
+      }
+    }
+
     const order = await ordersService.createOrder({
       clientId: req.body.clientId,
       workerId: req.body.workerId,
