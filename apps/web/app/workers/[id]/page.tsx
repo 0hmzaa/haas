@@ -121,21 +121,21 @@ export default function WorkerDetailPage({ params }: WorkerDetailPageProps) {
 
           <Card>
             <h2 className="text-base font-bold">Trust</h2>
-            <p className="mt-3 text-4xl font-black">{worker.ratingAvg.toFixed(1)}<span className="text-lg text-[var(--color-muted)]"> / 5</span></p>
+            <p className="mt-3 text-4xl font-black">{(worker.ratingAvg ?? 0).toFixed(1)}<span className="text-lg text-[var(--color-muted)]"> / 5</span></p>
             <div className="mt-4 grid gap-2 text-xs">
               <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
                 <span className="text-[var(--color-muted)]">Approval rate</span>
-                <span className="font-bold">{(worker.approvalRate * 100).toFixed(0)}%</span>
+                <span className="font-bold">{((worker.approvalRate ?? 0) * 100).toFixed(0)}%</span>
               </div>
               <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
                 <span className="text-[var(--color-muted)]">Dispute rate</span>
-                <span className="font-bold">{(worker.disputeRate * 100).toFixed(0)}%</span>
+                <span className="font-bold">{((worker.disputeRate ?? 0) * 100).toFixed(0)}%</span>
               </div>
               <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
                 <span className="text-[var(--color-muted)]">Reputation</span>
-                <span className="font-bold">{worker.reputationScore.toFixed(2)}</span>
+                <span className="font-bold">{(worker.reputationScore ?? 0).toFixed(2)}</span>
               </div>
-              {reputation ? (
+              {reputation?.score != null ? (
                 <div className="flex items-center justify-between">
                   <span className="text-[var(--color-muted)]">Outcome score</span>
                   <span className="font-bold">{reputation.score.toFixed(2)}</span>

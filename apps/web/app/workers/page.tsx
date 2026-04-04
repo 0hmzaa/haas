@@ -107,7 +107,7 @@ export default function WorkersPage() {
                   </p>
                 </div>
                 <span className="border-2 border-[var(--color-border-strong)] px-2 py-0.5 text-xs font-black">
-                  {worker.ratingAvg.toFixed(1)}
+                  {(worker.ratingAvg ?? 0).toFixed(1)}
                 </span>
               </div>
               <p className="mt-2 line-clamp-2 text-sm text-[var(--color-muted)]">
