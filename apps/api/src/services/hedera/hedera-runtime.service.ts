@@ -181,12 +181,14 @@ export class HederaRuntimeService {
     const client = this.createClient();
 
     const scheduledTransfer = new TransferTransaction()
-      .addHbarTransfer(AccountId.fromString(payerAccountId), Hbar.fromString(`-${input.amountHbar}`))
+      .addHbarTransfer(
+        AccountId.fromString(payerAccountId),
+        Hbar.fromString(`-${input.amountHbar}`)
+      )
       .addHbarTransfer(
         AccountId.fromString(input.receiverAccountId),
         Hbar.fromString(input.amountHbar)
-      )
-      .freezeWith(client);
+      );
 
     const adminKey = parseHederaPrivateKey({
       value: this.config.scheduleAdminKey,
