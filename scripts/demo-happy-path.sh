@@ -6,6 +6,7 @@ MODE="${1:-approve}"
 X402_FACILITATOR_ID="${X402_FACILITATOR_ID:-facilitator-demo}"
 X402_FACILITATOR_SIGNING_SECRET="${X402_FACILITATOR_SIGNING_SECRET:-dev-facilitator-secret}"
 DEMO_CLIENT_ACCOUNT_ID="${DEMO_CLIENT_ACCOUNT_ID:-0.0.5005}"
+DEMO_ORDER_AMOUNT="${DEMO_ORDER_AMOUNT:-1.00}"
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$1"
@@ -30,6 +31,20 @@ if (typeof cursor === "object") {
   process.stdout.write(String(cursor));
 }
 ' "$path"
+}
+
+json_get_or_fail() {
+  local path="$1"
+  local label="$2"
+  local payload="$3"
+
+  local value
+  if ! value="$(printf '%s' "${payload}" | json_get "${path}" 2>/dev/null)"; then
+    echo "${label} failed: ${payload}" >&2
+    exit 1
+  fi
+
+  printf '%s' "${value}"
 }
 
 post_json() {
@@ -98,13 +113,13 @@ create_verified_worker() {
   verified="$(post_json '/api/world/verify' "{\"session_id\":\"${session_id}\",\"nullifier_hash\":\"${nullifier_hash}\",\"walletAddress\":\"${wallet_address}\",\"proof\":{\"valid\":true}}")"
 
   local verified_human_id
-  verified_human_id="$(printf '%s' "$verified" | json_get 'verifiedHumanId')"
+  verified_human_id="$(json_get_or_fail 'verifiedHumanId' 'World verify' "$verified")"
 
   local worker
   worker="$(post_json '/api/workers' "{\"verifiedHumanId\":\"${verified_human_id}\",\"displayName\":\"${label}\",\"skills\":[\"local-task\"],\"baseRate\":\"15.00\"}")"
 
   local worker_id
-  worker_id="$(printf '%s' "$worker" | json_get 'id')"
+  worker_id="$(json_get_or_fail 'id' 'Worker create' "$worker")"
 
   printf '%s|%s\n' "$verified_human_id" "$worker_id"
 }
@@ -121,23 +136,23 @@ if [[ "$MODE" == "auto" ]]; then
   REVIEW_WINDOW_SUFFIX=",\"reviewWindowHours\":0"
 fi
 
-ORDER_PAYLOAD="{\"clientId\":\"client-demo\",\"clientAccountId\":\"${DEMO_CLIENT_ACCOUNT_ID}\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Check cafe queue\",\"objective\":\"Measure waiting time\",\"instructions\":\"Go onsite and report queue length\",\"amount\":\"20.00\",\"currency\":\"HBAR\"${REVIEW_WINDOW_SUFFIX}}"
+ORDER_PAYLOAD="{\"clientId\":\"client-demo\",\"clientAccountId\":\"${DEMO_CLIENT_ACCOUNT_ID}\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Check cafe queue\",\"objective\":\"Measure waiting time\",\"instructions\":\"Go onsite and report queue length\",\"amount\":\"${DEMO_ORDER_AMOUNT}\",\"currency\":\"HBAR\"${REVIEW_WINDOW_SUFFIX}}"
 ORDER_RESP="$(post_json '/api/orders' "$ORDER_PAYLOAD")"
-ORDER_ID="$(printf '%s' "$ORDER_RESP" | json_get 'id')"
+ORDER_ID="$(json_get_or_fail 'id' 'Order create' "$ORDER_RESP")"
 log "Order created: ${ORDER_ID}"
 
 PAY_RESP="$(post_json "/api/orders/${ORDER_ID}/pay" '{}')"
-X402_PAYMENT_ID="$(printf '%s' "$PAY_RESP" | json_get 'payment.x402PaymentId')"
+X402_PAYMENT_ID="$(json_get_or_fail 'payment.x402PaymentId' 'Payment requirement create' "$PAY_RESP")"
 log "Payment requirements generated: x402PaymentId=${X402_PAYMENT_ID}"
 
-FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"0.0.demo-$(date +%s)\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"${DEMO_CLIENT_ACCOUNT_ID}\",\"amount\":\"20.00\",\"asset\":\"HBAR\"}"
+FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"0.0.demo-$(date +%s)\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"${DEMO_CLIENT_ACCOUNT_ID}\",\"amount\":\"${DEMO_ORDER_AMOUNT}\",\"asset\":\"HBAR\"}"
 post_signed_x402_webhook '/api/webhooks/x402' "$FUND_WEBHOOK_PAYLOAD" >/dev/null
 log "Funding webhook processed"
 
 post_json "/api/orders/${ORDER_ID}/start" '{}' >/dev/null
 log "Order started"
 
-TMP_FILE="$(mktemp /tmp/haas-proof-XXXXXX.txt)"
+TMP_FILE="$(mktemp "${TMPDIR:-/tmp}/haas-proof.XXXXXX")"
 printf 'Queue length observed: 7 people.\nCaptured at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$TMP_FILE"
 
 curl -fsS -X POST "${API_BASE_URL}/api/orders/${ORDER_ID}/proof" \
@@ -183,11 +198,11 @@ case "$MODE" in
 esac
 
 ORDER_FINAL="$(curl -fsS "${API_BASE_URL}/api/orders/${ORDER_ID}")"
-ORDER_STATUS="$(printf '%s' "$ORDER_FINAL" | json_get 'status')"
+ORDER_STATUS="$(json_get_or_fail 'status' 'Order fetch' "$ORDER_FINAL")"
 log "Final order status: ${ORDER_STATUS}"
 
 AUDIT="$(curl -fsS "${API_BASE_URL}/api/orders/${ORDER_ID}/audit")"
-TIMELINE_COUNT="$(printf '%s' "$AUDIT" | json_get 'timeline.length')"
+TIMELINE_COUNT="$(json_get_or_fail 'timeline.length' 'Audit fetch' "$AUDIT")"
 log "Audit timeline events: ${TIMELINE_COUNT}"
 
 printf '\nDemo completed successfully for order %s in mode=%s\n' "$ORDER_ID" "$MODE"

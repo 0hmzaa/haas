@@ -11,6 +11,7 @@ export type X402FacilitatorPaymentRequirements = {
   payTo: string;
   maxTimeoutSeconds: number;
   asset: string;
+  extra?: Record<string, unknown>;
 };
 
 export type SubmitSignedPaymentInput = {

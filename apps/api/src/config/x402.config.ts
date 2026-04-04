@@ -16,6 +16,7 @@ export type X402Config = {
   facilitatorApiKeyHeader: string;
   facilitatorTimeoutMs: number;
   paymentNetwork: string;
+  paymentFeePayer?: string;
   paymentResourceBaseUrl: string;
   paymentDescription: string;
   paymentMimeType: string;
@@ -78,6 +79,9 @@ export function getX402Config(): X402Config {
         : hederaConfig.network === "mainnet"
           ? "hedera-mainnet"
           : "hedera-testnet",
+    paymentFeePayer: isNonEmpty(process.env.X402_PAYMENT_FEE_PAYER)
+      ? process.env.X402_PAYMENT_FEE_PAYER
+      : undefined,
     paymentResourceBaseUrl: isNonEmpty(process.env.X402_PAYMENT_RESOURCE_BASE_URL)
       ? process.env.X402_PAYMENT_RESOURCE_BASE_URL
       : "http://localhost:4000",

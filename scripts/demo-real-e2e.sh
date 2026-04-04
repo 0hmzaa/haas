@@ -2,11 +2,12 @@
 set -euo pipefail
 
 API_BASE_URL="${API_BASE_URL:-http://localhost:4000}"
-REAL_ORDER_AMOUNT="${REAL_ORDER_AMOUNT:-20.00}"
+REAL_ORDER_AMOUNT="${REAL_ORDER_AMOUNT:-1.00}"
 REAL_ORDER_CURRENCY="${REAL_ORDER_CURRENCY:-HBAR}"
 REAL_CLIENT_ID="${REAL_CLIENT_ID:-client-live}"
 WORLD_ID_MODE="${WORLD_ID_MODE:-mock}"
 REAL_X402_PAYMENT_HEADER="${REAL_X402_PAYMENT_HEADER:-}"
+REAL_PAYMENT_REQUIREMENTS_FILE="${REAL_PAYMENT_REQUIREMENTS_FILE:-}"
 
 required_env() {
   local name="$1"
@@ -204,7 +205,13 @@ log "Order created: ${ORDER_ID}"
 
 PAY_RESP="$(post_json "/api/orders/${ORDER_ID}/pay" '{}')"
 X402_PAYMENT_ID="$(json_get_or_fail 'payment.x402PaymentId' 'Payment requirement creation' "${PAY_RESP}")"
+PAYMENT_REQUIREMENTS_JSON="$(json_get_or_fail 'payment.x402.paymentRequirements' 'Payment requirements extract' "${PAY_RESP}")"
+if [[ -z "${REAL_PAYMENT_REQUIREMENTS_FILE}" ]]; then
+  REAL_PAYMENT_REQUIREMENTS_FILE="/tmp/haas-payment-requirements-${ORDER_ID}.json"
+fi
+printf '%s\n' "${PAYMENT_REQUIREMENTS_JSON}" > "${REAL_PAYMENT_REQUIREMENTS_FILE}"
 log "Payment requirement created: x402PaymentId=${X402_PAYMENT_ID}"
+log "Payment requirements saved: ${REAL_PAYMENT_REQUIREMENTS_FILE}"
 
 if [[ -n "${REAL_X402_PAYMENT_HEADER}" ]]; then
   SUBMIT_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"signedPayload\":{\"paymentHeader\":\"${REAL_X402_PAYMENT_HEADER}\"},\"payerAccount\":\"${REAL_PAYER_ACCOUNT}\"}"
@@ -219,6 +226,7 @@ if [[ -n "${REAL_X402_PAYMENT_HEADER}" ]]; then
   FACILITATOR_TX_ID="$(json_get_or_fail 'hederaTxId' 'Facilitator direct submit tx id' "${SUBMIT_RESP}")"
   log "Facilitator direct submit accepted: hederaTxId=${FACILITATOR_TX_ID}"
 else
+  log "REAL_X402_PAYMENT_HEADER is empty: using signed webhook fallback (no direct facilitator submit)"
   FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"${REAL_HEDERA_TX_ID}\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"${REAL_PAYER_ACCOUNT}\",\"amount\":\"${REAL_ORDER_AMOUNT}\",\"asset\":\"${REAL_ORDER_CURRENCY}\"}"
   post_signed_x402_webhook '/api/webhooks/x402' "${FUND_WEBHOOK_PAYLOAD}" >/dev/null
   log "Signed x402 webhook accepted"
@@ -227,10 +235,10 @@ fi
 post_json "/api/orders/${ORDER_ID}/start" '{}' >/dev/null
 log "Order started"
 
-TMP_FILE="$(mktemp /tmp/haas-real-proof-XXXXXX.txt)"
+TMP_FILE="$(mktemp "${TMPDIR:-/tmp}/haas-real-proof.XXXXXX")"
 printf 'Live E2E proof captured at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "${TMP_FILE}"
 
-curl -sS -X POST "${API_BASE_URL}/api/orders/${ORDER_ID}/proof" \
+curl -fsS -X POST "${API_BASE_URL}/api/orders/${ORDER_ID}/proof" \
   -F "file=@${TMP_FILE};type=text/plain" \
   -F 'summary=Live E2E proof artifact' >/dev/null
 

@@ -113,8 +113,7 @@ export class PaymentsService {
   }): X402FacilitatorPaymentRequirements {
     const normalizedBase = this.x402Config.paymentResourceBaseUrl.replace(/\/+$/, "");
     const resource = `${normalizedBase}/api/orders/${input.orderId}/pay`;
-
-    return {
+    const requirements: X402FacilitatorPaymentRequirements = {
       scheme: "exact",
       network: this.x402Config.paymentNetwork,
       maxAmountRequired: input.amount.toString(),
@@ -125,6 +124,17 @@ export class PaymentsService {
       maxTimeoutSeconds: this.x402Config.paymentMaxTimeoutSeconds,
       asset: input.asset
     };
+
+    if (
+      this.x402Config.paymentNetwork.toLowerCase().startsWith("hedera") &&
+      this.x402Config.paymentFeePayer
+    ) {
+      requirements.extra = {
+        feePayer: this.x402Config.paymentFeePayer
+      };
+    }
+
+    return requirements;
   }
 
   async createPaymentRequirement(orderId: string): Promise<PaymentRequirement> {
