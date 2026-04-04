@@ -37,6 +37,8 @@ services:
         condition: service_healthy
     volumes:
       - ../storage/proofs:/storage/proofs
+      - ../apps/api:/app/apps/api
+      - ../packages/shared:/app/packages/shared
     command: ["pnpm", "--filter", "api", "dev"]
 
   web:
@@ -48,12 +50,18 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      API_BASE_URL: http://api:4000
+      API_BASE_URL: http://localhost:4000
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:4000
+      NEXT_PUBLIC_HEDERA_NETWORK: ${NEXT_PUBLIC_HEDERA_NETWORK:-testnet}
+      NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID:-}
     ports:
       - "3000:3000"
     depends_on:
       api:
         condition: service_started
+    volumes:
+      - ../apps/web:/app/apps/web
+      - ../packages/shared:/app/packages/shared
     command: ["pnpm", "--filter", "web", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
 
 volumes:
