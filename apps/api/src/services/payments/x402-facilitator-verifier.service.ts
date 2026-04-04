@@ -13,6 +13,17 @@ export type VerifyFundingWebhookSignatureInput = {
 export type VerifyFundingWebhookSignatureResult = {
   facilitatorId?: string;
   signatureVerified: boolean;
+  hederaTxVerified: boolean;
+};
+
+type MirrorTransactionRecord = {
+  transaction_id: string;
+  result: string;
+  name?: string;
+};
+
+type MirrorTransactionsResponse = {
+  transactions?: MirrorTransactionRecord[];
 };
 
 function normalizeSignature(value: string): string {
@@ -69,16 +80,62 @@ function buildCanonicalPayload(input: {
 export class X402FacilitatorVerifierService {
   private readonly config = getX402Config();
 
-  verifyFundingWebhookSignature(
+  private async verifyHederaTransaction(hederaTxId: string): Promise<void> {
+    if (!this.config.verifyHederaTx) {
+      return;
+    }
+
+    const fetchFn = globalThis.fetch;
+    if (typeof fetchFn !== "function") {
+      throw new AppError("Global fetch is not available for Hedera tx verification", 500);
+    }
+
+    const baseUrl = this.config.mirrorNodeBaseUrl.replace(/\/+$/, "");
+    const response = await fetchFn(
+      `${baseUrl}/api/v1/transactions/${encodeURIComponent(hederaTxId)}`,
+      {
+        headers: {
+          accept: "application/json"
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new AppError("Unable to verify Hedera transaction from Mirror Node", 502);
+    }
+
+    const payload = (await response.json()) as MirrorTransactionsResponse;
+    const transactions = payload.transactions ?? [];
+    const successTx = transactions.find((tx) => tx.result === "SUCCESS");
+
+    if (!successTx) {
+      throw new AppError("Hedera transaction is not confirmed as SUCCESS", 409);
+    }
+
+    if (typeof successTx.name === "string" && !successTx.name.includes("CRYPTO")) {
+      throw new AppError("Hedera funding transaction is not a crypto transfer", 409);
+    }
+  }
+
+  async verifyFundingWebhookSignature(
     input: VerifyFundingWebhookSignatureInput
-  ): VerifyFundingWebhookSignatureResult {
+  ): Promise<VerifyFundingWebhookSignatureResult> {
     const presentedFacilitatorId = input.facilitatorId ?? input.webhook.facilitatorId;
     const resolvedFacilitatorId = this.config.facilitatorId ?? presentedFacilitatorId;
 
     if (!this.config.requireSignedWebhook) {
+      if (input.webhook.success) {
+        if (!input.webhook.hederaTxId || input.webhook.hederaTxId.length === 0) {
+          throw new AppError("hederaTxId is required when success=true", 400);
+        }
+
+        await this.verifyHederaTransaction(input.webhook.hederaTxId);
+      }
+
       return {
         facilitatorId: resolvedFacilitatorId,
-        signatureVerified: false
+        signatureVerified: false,
+        hederaTxVerified: this.config.verifyHederaTx
       };
     }
 
@@ -128,9 +185,18 @@ export class X402FacilitatorVerifierService {
       throw new AppError("Invalid x402 webhook signature", 401);
     }
 
+    if (input.webhook.success) {
+      if (!input.webhook.hederaTxId || input.webhook.hederaTxId.length === 0) {
+        throw new AppError("hederaTxId is required when success=true", 400);
+      }
+
+      await this.verifyHederaTransaction(input.webhook.hederaTxId);
+    }
+
     return {
       facilitatorId: resolvedFacilitatorId,
-      signatureVerified: true
+      signatureVerified: true,
+      hederaTxVerified: this.config.verifyHederaTx
     };
   }
 }

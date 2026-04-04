@@ -7,6 +7,7 @@
 - If `HEDERA_ENABLED=true`, configure operator/topic envs and ensure workers are onboarded with Hedera-style `walletAddress` (format `0.0.x`).
 - For World ID, keep `WORLD_ID_MODE=mock` for local demo, or switch to `WORLD_ID_MODE=live` with `WORLD_ID_VERIFY_URL`/`WORLD_ID_APP_ID`.
 - x402 webhooks are signed by default; align API + demo script with the same `X402_FACILITATOR_ID` and `X402_FACILITATOR_SIGNING_SECRET`.
+- Optional strict mode: set `X402_VERIFY_HEDERA_TX=true` to require Mirror Node confirmation of `hederaTxId` for successful funding webhooks.
 
 ## 2. Quality Gate Before Demo
 Run:

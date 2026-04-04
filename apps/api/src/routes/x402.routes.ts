@@ -28,7 +28,7 @@ router.post("/webhooks/x402", async (req, res, next) => {
     };
 
     const signatureVerification =
-      x402FacilitatorVerifierService.verifyFundingWebhookSignature({
+      await x402FacilitatorVerifierService.verifyFundingWebhookSignature({
         webhook: webhookInput,
         signature:
           typeof req.headers["x-x402-signature"] === "string"
@@ -51,7 +51,8 @@ router.post("/webhooks/x402", async (req, res, next) => {
 
     res.status(200).json({
       ...response,
-      signatureVerified: signatureVerification.signatureVerified
+      signatureVerified: signatureVerification.signatureVerified,
+      hederaTxVerified: signatureVerification.hederaTxVerified
     });
   } catch (error) {
     next(error);
