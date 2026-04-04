@@ -210,6 +210,46 @@ export class DisputesService {
     };
   }
 
+  async submitWorkerResponse(
+    orderId: string,
+    input: { workerStatement: string; actorId?: string }
+  ) {
+    const dispute = await prisma.disputeCase.findUnique({
+      where: { orderId },
+      include: {
+        order: {
+          select: {
+            workerId: true
+          }
+        }
+      }
+    });
+
+    if (!dispute) {
+      throw new AppError("Dispute not found", 404);
+    }
+
+    if (dispute.status === DisputeStatus.RESOLVED) {
+      throw new AppError("Dispute already resolved", 409);
+    }
+
+    const updated = await prisma.disputeCase.update({
+      where: { id: dispute.id },
+      data: {
+        workerStatement: input.workerStatement
+      }
+    });
+
+    return {
+      id: updated.id,
+      orderId: updated.orderId,
+      workerId: dispute.order.workerId,
+      workerStatement: updated.workerStatement,
+      status: updated.status,
+      actorId: input.actorId ?? null
+    };
+  }
+
   async submitReviewerVote(
     orderId: string,
     input: { reviewerId: string; vote: DisputeResolution }

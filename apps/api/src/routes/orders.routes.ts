@@ -229,6 +229,26 @@ router.get("/:id/dispute", async (req, res, next) => {
   }
 });
 
+router.post("/:id/dispute/respond", async (req, res, next) => {
+  try {
+    if (
+      typeof req.body?.workerStatement !== "string" ||
+      req.body.workerStatement.length === 0
+    ) {
+      throw new AppError("workerStatement is required", 400);
+    }
+
+    const result = await disputesService.submitWorkerResponse(req.params.id, {
+      workerStatement: req.body.workerStatement,
+      actorId: typeof req.body?.actorId === "string" ? req.body.actorId : undefined
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/:id/dispute/vote", async (req, res, next) => {
   try {
     if (typeof req.body?.reviewerId !== "string" || req.body.reviewerId.length === 0) {

@@ -47,6 +47,7 @@ pnpm demo:happy-path auto
   - `approve`: direct approval path
   - `dispute`: opens dispute + submits majority reviewer votes
   - `auto`: uses `reviewWindowHours=0` and simulates a `RELEASE` Hedera webhook to demonstrate timeout auto-release end-to-end in one run
+- Dispute flow supports worker response update through `POST /api/orders/:id/dispute/respond`.
 - Audit timeline fetch (`/api/orders/:id/audit`)
 
 ## 5. Manual Checks
