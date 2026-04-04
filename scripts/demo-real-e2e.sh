@@ -165,8 +165,9 @@ VERIFIED_HUMAN_ID="$(json_get_or_fail 'verifiedHumanId' 'World verification' "${
 log "World verification accepted: verifiedHumanId=${VERIFIED_HUMAN_ID}"
 
 WORKER_RESP="$(
-  post_json '/api/workers' \
-    "{\"verifiedHumanId\":\"${VERIFIED_HUMAN_ID}\",\"displayName\":\"live-worker\",\"skills\":[\"real-world-task\"],\"baseRate\":\"15.00\"}"
+  curl -sS -X POST "${API_BASE_URL}/api/workers" \
+    -H 'Content-Type: application/json' \
+    -d "{\"verifiedHumanId\":\"${VERIFIED_HUMAN_ID}\",\"displayName\":\"live-worker\",\"skills\":[\"real-world-task\"],\"baseRate\":\"15.00\"}"
 )"
 
 if WORKER_ID="$(printf '%s' "${WORKER_RESP}" | json_get 'id' 2>/dev/null)"; then
