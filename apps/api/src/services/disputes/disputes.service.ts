@@ -6,6 +6,7 @@ import { AppError } from "../../lib/app-error.js";
 import { ScheduledReleaseService } from "../hedera/scheduled-release.service.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 import { ReputationService } from "../reputation/reputation.service.js";
+import { getHederaConfig } from "../../config/hedera.config.js";
 
 const RESOLUTION_TO_ORDER_STATUS: Record<DisputeResolution, OrderStatus> = {
   RELEASE_TO_WORKER: "APPROVED",
@@ -53,6 +54,7 @@ export class DisputesService {
   private readonly scheduledReleaseService = new ScheduledReleaseService();
   private readonly hcsAuditService = new HcsAuditService();
   private readonly reputationService = new ReputationService();
+  private readonly hederaConfig = getHederaConfig();
 
   async openDispute(
     orderId: string,
@@ -317,7 +319,7 @@ export class DisputesService {
           update: { releaseTxId: settlementTxId },
           create: {
             orderId,
-            hederaNetwork: "testnet",
+            hederaNetwork: this.hederaConfig.network,
             releaseTxId: settlementTxId
           }
         });
@@ -329,7 +331,7 @@ export class DisputesService {
           update: { refundTxId: settlementTxId },
           create: {
             orderId,
-            hederaNetwork: "testnet",
+            hederaNetwork: this.hederaConfig.network,
             refundTxId: settlementTxId
           }
         });

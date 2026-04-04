@@ -181,7 +181,7 @@ export class ReconciliationService {
     await prisma.hederaOrderLedger.upsert({
       where: { orderId: payload.orderId },
       update: {
-        hederaNetwork: "testnet",
+        hederaNetwork: this.hederaConfig.network,
         topicId: payload.topicId,
         fundingTxId: payload.txType === "FUNDING" ? payload.txId : undefined,
         releaseTxId: payload.txType === "RELEASE" ? payload.txId : undefined,
@@ -193,7 +193,7 @@ export class ReconciliationService {
       },
       create: {
         orderId: payload.orderId,
-        hederaNetwork: "testnet",
+        hederaNetwork: this.hederaConfig.network,
         topicId: payload.topicId,
         fundingTxId: payload.txType === "FUNDING" ? payload.txId : null,
         releaseTxId: payload.txType === "RELEASE" ? payload.txId : null,
@@ -257,7 +257,7 @@ export class ReconciliationService {
           },
           create: {
             orderId: payload.orderId,
-            hederaNetwork: "testnet",
+            hederaNetwork: this.hederaConfig.network,
             releaseTxId: payload.txId
           }
         });
