@@ -40,6 +40,53 @@ function dateToTimestamp(date: Date): Timestamp {
   return new Timestamp(seconds, nanos);
 }
 
+function stripHexPrefix(value: string): string {
+  return value.startsWith("0x") || value.startsWith("0X") ? value.slice(2) : value;
+}
+
+function isRawHexPrivateKey(value: string): boolean {
+  return /^[a-fA-F0-9]{64}$/.test(stripHexPrefix(value));
+}
+
+function parseHederaPrivateKey(input: {
+  value: string;
+  type: "auto" | "ecdsa" | "ed25519";
+  envName: string;
+}): PrivateKey {
+  const raw = input.value.trim();
+
+  const parseAsEcdsa = () => PrivateKey.fromStringECDSA(raw);
+  const parseAsEd25519 = () => PrivateKey.fromStringED25519(raw);
+  const parseAsDefault = () => PrivateKey.fromString(raw);
+
+  try {
+    if (input.type === "ecdsa") {
+      return parseAsEcdsa();
+    }
+
+    if (input.type === "ed25519") {
+      return parseAsEd25519();
+    }
+
+    if (isRawHexPrivateKey(raw)) {
+      // Hex private keys are often ECDSA in Hedera + EVM hackathon setups.
+      // We still keep ED25519 fallback for compatibility.
+      try {
+        return parseAsEcdsa();
+      } catch {
+        return parseAsEd25519();
+      }
+    }
+
+    return parseAsDefault();
+  } catch {
+    throw new AppError(
+      `Invalid ${input.envName}. Provide a valid Hedera private key and optional key type override.`,
+      500
+    );
+  }
+}
+
 function ensureRuntimeConfig(config: HederaConfig): {
   operatorAccountId: string;
   operatorPrivateKey: string;
@@ -78,7 +125,13 @@ export class HederaRuntimeService {
     const client =
       this.config.network === "mainnet" ? Client.forMainnet() : Client.forTestnet();
 
-    client.setOperator(runtime.operatorAccountId, runtime.operatorPrivateKey);
+    const operatorPrivateKey = parseHederaPrivateKey({
+      value: runtime.operatorPrivateKey,
+      type: this.config.operatorPrivateKeyType,
+      envName: "HEDERA_OPERATOR_PRIVATE_KEY"
+    });
+
+    client.setOperator(runtime.operatorAccountId, operatorPrivateKey);
     return client;
   }
 
@@ -135,7 +188,11 @@ export class HederaRuntimeService {
       )
       .freezeWith(client);
 
-    const adminKey = PrivateKey.fromString(this.config.scheduleAdminKey);
+    const adminKey = parseHederaPrivateKey({
+      value: this.config.scheduleAdminKey,
+      type: this.config.scheduleAdminKeyType,
+      envName: "HEDERA_SCHEDULE_ADMIN_KEY"
+    });
 
     const scheduleCreateTx = await new ScheduleCreateTransaction()
       .setScheduledTransaction(scheduledTransfer as unknown as Transaction)
@@ -172,7 +229,11 @@ export class HederaRuntimeService {
     }
 
     const client = this.createClient();
-    const adminKey = PrivateKey.fromString(this.config.scheduleAdminKey);
+    const adminKey = parseHederaPrivateKey({
+      value: this.config.scheduleAdminKey,
+      type: this.config.scheduleAdminKeyType,
+      envName: "HEDERA_SCHEDULE_ADMIN_KEY"
+    });
 
     const tx = await new ScheduleDeleteTransaction()
       .setScheduleId(ScheduleId.fromString(scheduleId))
