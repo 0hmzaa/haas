@@ -8,10 +8,10 @@ import { StatusPill } from "../../../../components/status-pill";
 import { WalletSessionPanel } from "../../../../components/wallet-session-panel";
 import { listOrders } from "../../../../lib/api-client";
 import type { OrderSummary } from "../../../../lib/models";
-import type { HaasSession } from "../../../../lib/session";
+import { useSession } from "../../../../lib/session-context";
 
 export default function WorkerTasksPage() {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +55,7 @@ export default function WorkerTasksPage() {
 
   return (
     <PageContainer title="Worker Tasks" subtitle="Track assigned work and submit proof artifacts.">
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       {!session?.workerId ? (
         <Card>

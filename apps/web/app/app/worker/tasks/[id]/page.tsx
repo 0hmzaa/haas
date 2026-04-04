@@ -14,14 +14,14 @@ import {
   uploadProof
 } from "../../../../../lib/api-client";
 import type { DisputeDetail, OrderSummary } from "../../../../../lib/models";
-import type { HaasSession } from "../../../../../lib/session";
+import { useSession } from "../../../../../lib/session-context";
 
 type WorkerTaskDetailPageProps = {
   params: Promise<{ id: string }>;
 };
 
 export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPageProps) {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [orderId, setOrderId] = useState("");
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [dispute, setDispute] = useState<DisputeDetail | null>(null);
@@ -128,7 +128,7 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
 
   return (
     <PageContainer title="Task Detail" subtitle={orderId ? `Order ${orderId}` : "Order"}>
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       {!session?.walletAddress ? (
         <Card>

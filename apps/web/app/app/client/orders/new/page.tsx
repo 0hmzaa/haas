@@ -7,12 +7,12 @@ import { PageContainer } from "../../../../../components/page-container";
 import { WalletSessionPanel } from "../../../../../components/wallet-session-panel";
 import { createOrder, listWorkers } from "../../../../../lib/api-client";
 import type { WorkerProfile } from "../../../../../lib/models";
-import { deriveClientNamespace, type HaasSession } from "../../../../../lib/session";
+import { useSession } from "../../../../../lib/session-context";
+import { deriveClientNamespace } from "../../../../../lib/session";
 
 export default function CreateOrderPage() {
   const router = useRouter();
-
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [workers, setWorkers] = useState<WorkerProfile[]>([]);
   const [workerId, setWorkerId] = useState("");
   const [title, setTitle] = useState("On-site verification task");
@@ -106,7 +106,7 @@ export default function CreateOrderPage() {
       title="Create Order"
       subtitle="Directly book one worker for one scoped real-world task."
     >
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       <Card>
         <h2 className="text-base font-semibold">Order Form</h2>

@@ -8,10 +8,10 @@ import { StatusPill } from "../../../../components/status-pill";
 import { WalletSessionPanel } from "../../../../components/wallet-session-panel";
 import { getReviewerReputation, listOrders } from "../../../../lib/api-client";
 import type { OrderSummary, ReputationReviewerResponse } from "../../../../lib/models";
-import type { HaasSession } from "../../../../lib/session";
+import { useSession } from "../../../../lib/session-context";
 
 export default function WorkerReviewsPage() {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [reputation, setReputation] = useState<ReputationReviewerResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,7 @@ export default function WorkerReviewsPage() {
       title="Review Queue"
       subtitle="Dispute cases assigned to you as reviewer."
     >
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       {!session?.verifiedHumanId ? (
         <Card>

@@ -13,7 +13,7 @@ import {
 } from "../../../../../../lib/api-client";
 import { toHashscanTxUrl } from "../../../../../../lib/hedera-links";
 import type { OrderSummary } from "../../../../../../lib/models";
-import type { HaasSession } from "../../../../../../lib/session";
+import { useSession } from "../../../../../../lib/session-context";
 
 type PayOrderPageProps = {
   params: Promise<{ id: string }>;
@@ -29,7 +29,7 @@ type RequirementState = {
 } | null;
 
 export default function PayOrderPage({ params }: PayOrderPageProps) {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [orderId, setOrderId] = useState("");
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [requirement, setRequirement] = useState<RequirementState>(null);
@@ -145,7 +145,7 @@ export default function PayOrderPage({ params }: PayOrderPageProps) {
 
   return (
     <PageContainer title="Fund Order" subtitle={orderId ? `Order ${orderId}` : "Order payment"}>
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       {loading ? (
         <Card>

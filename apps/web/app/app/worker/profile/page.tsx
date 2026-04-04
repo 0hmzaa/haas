@@ -6,10 +6,10 @@ import { PageContainer } from "../../../../components/page-container";
 import { WalletSessionPanel } from "../../../../components/wallet-session-panel";
 import { getWorkerById, updateWorker } from "../../../../lib/api-client";
 import type { WorkerProfile } from "../../../../lib/models";
-import type { HaasSession } from "../../../../lib/session";
+import { useSession } from "../../../../lib/session-context";
 
 export default function WorkerProfilePage() {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [worker, setWorker] = useState<WorkerProfile | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +61,7 @@ export default function WorkerProfilePage() {
 
   return (
     <PageContainer title="Worker Profile" subtitle="Manage profile and availability.">
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       {!session?.workerId ? (
         <Card>

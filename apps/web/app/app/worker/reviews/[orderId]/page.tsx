@@ -13,7 +13,7 @@ import {
   voteDispute
 } from "../../../../../lib/api-client";
 import type { DisputeDetail, OrderSummary, ProofArtifact } from "../../../../../lib/models";
-import type { HaasSession } from "../../../../../lib/session";
+import { useSession } from "../../../../../lib/session-context";
 
 type ReviewOrderPageProps = {
   params: Promise<{ orderId: string }>;
@@ -26,7 +26,7 @@ const VOTE_OPTIONS = [
 ] as const;
 
 export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [orderId, setOrderId] = useState("");
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [dispute, setDispute] = useState<DisputeDetail | null>(null);
@@ -148,7 +148,7 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
 
   return (
     <PageContainer title="Review Case" subtitle={orderId ? `Order ${orderId}` : "Dispute review"}>
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       {!session?.walletAddress ? (
         <Card>

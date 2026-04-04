@@ -1,21 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { Card } from "../../components/card";
 import { PageContainer } from "../../components/page-container";
 import { WalletSessionPanel } from "../../components/wallet-session-panel";
-import type { HaasSession } from "../../lib/session";
+import { useSession } from "../../lib/session-context";
 
 export default function AppWorkspacePage() {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
 
   return (
     <PageContainer
       title="Workspace"
       subtitle="Worker onboarding, mission execution, client orders, and dispute review."
     >
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel />
 
       <div className="grid gap-3 md:grid-cols-2">
         <Card>

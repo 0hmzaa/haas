@@ -15,15 +15,15 @@ import {
 } from "../../../../../lib/api-client";
 import { toHashscanTxUrl } from "../../../../../lib/hedera-links";
 import type { DisputeDetail, OrderSummary, ProofArtifact } from "../../../../../lib/models";
+import { useSession } from "../../../../../lib/session-context";
 import { deriveClientNamespace } from "../../../../../lib/session";
-import type { HaasSession } from "../../../../../lib/session";
 
 type ClientOrderDetailPageProps = {
   params: Promise<{ id: string }>;
 };
 
 export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageProps) {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [orderId, setOrderId] = useState("");
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [proofs, setProofs] = useState<ProofArtifact[]>([]);
@@ -137,7 +137,7 @@ export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageP
       title="Client Order Detail"
       subtitle={orderId ? `Order ${orderId}` : "Order detail"}
     >
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       {loading ? (
         <Card>

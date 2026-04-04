@@ -1,16 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f3ec;
-  --surface: #fffdf8;
-  --text: #1f1a17;
-  --muted: #6d6258;
-  --primary: #2f221a;
-  --primary-contrast: #f7f3ec;
-  --border: #d8ccbd;
-  --success: #1f6b3b;
-  --warning: #8a5a17;
-  --danger: #8a1f1f;
+  --background: #fafaf8;
+  --surface: #ffffff;
+  --text: #0a0a0a;
+  --muted: #6b6b6b;
+  --primary: #0a0a0a;
+  --primary-contrast: #fafaf8;
+  --border: #e0e0e0;
+  --border-strong: #0a0a0a;
+  --success: #16a34a;
+  --warning: #ca8a04;
+  --danger: #dc2626;
+  --accent: #6366f1;
   --font-sans:
     "IBM Plex Sans", "Avenir Next", Avenir, "Segoe UI", "Helvetica Neue",
     Helvetica, Arial, sans-serif;
@@ -27,9 +29,11 @@
   --color-primary: var(--primary);
   --color-primary-contrast: var(--primary-contrast);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-accent: var(--accent);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 }
@@ -40,18 +44,86 @@ body {
   font-family: var(--font-sans);
 }
 
+/* ── Bold halftone utilities ─────────────────────── */
+
+.halftone-dots {
+  background-image: radial-gradient(circle, var(--border-strong) 1.5px, transparent 1.5px);
+  background-size: 12px 12px;
+}
+
+.halftone-hero {
+  background-image: radial-gradient(circle, rgba(10, 10, 10, 0.08) 2px, transparent 2px);
+  background-size: 14px 14px;
+}
+
+.halftone-band {
+  background-image: radial-gradient(circle, rgba(10, 10, 10, 0.12) 2.5px, transparent 2.5px);
+  background-size: 10px 10px;
+  height: 6px;
+  width: 100%;
+}
+
+.grain-texture {
+  position: relative;
+}
+
+.grain-texture::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* ── Form base styles ────────────────────────────── */
+
 input,
 textarea,
 select {
-  @apply rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition;
+  @apply rounded-sm border-2 border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition;
 }
 
 input:focus,
 textarea:focus,
 select:focus {
-  @apply ring-2 ring-[var(--color-primary)];
+  @apply border-[var(--color-border-strong)] ring-1 ring-[var(--color-border-strong)];
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
 }
 
 button {
-  @apply transition;
+  @apply cursor-pointer transition;
+}
+
+/* ── Skeleton shimmer ────────────────────────────── */
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, var(--border) 25%, #f0f0f0 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ── Typography extras ───────────────────────────── */
+
+.font-display {
+  font-family: var(--font-sans);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.text-balance {
+  text-wrap: balance;
 }

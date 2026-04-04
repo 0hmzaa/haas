@@ -8,8 +8,8 @@ import { StatusPill } from "../../../../components/status-pill";
 import { WalletSessionPanel } from "../../../../components/wallet-session-panel";
 import { listOrders } from "../../../../lib/api-client";
 import type { OrderSummary } from "../../../../lib/models";
+import { useSession } from "../../../../lib/session-context";
 import { deriveClientNamespace } from "../../../../lib/session";
-import type { HaasSession } from "../../../../lib/session";
 
 const ORDER_STATUS_OPTIONS = [
   "",
@@ -26,7 +26,7 @@ const ORDER_STATUS_OPTIONS = [
 ] as const;
 
 export default function ClientOrdersPage() {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session } = useSession();
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -84,7 +84,7 @@ export default function ClientOrdersPage() {
         </Link>
       }
     >
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       <Card className="grid gap-3 md:grid-cols-2">
         <div>

@@ -5,14 +5,15 @@ import { Card } from "../../../../components/card";
 import { PageContainer } from "../../../../components/page-container";
 import { WalletSessionPanel } from "../../../../components/wallet-session-panel";
 import { createWorker, verifyWorld } from "../../../../lib/api-client";
-import { saveSession, type HaasSession } from "../../../../lib/session";
+import { useSession } from "../../../../lib/session-context";
+import { saveSession } from "../../../../lib/session";
 
 function randomToken(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
 }
 
 export default function WorkerOnboardingPage() {
-  const [session, setSession] = useState<HaasSession | null>(null);
+  const { session, refresh: refreshSession } = useSession();
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [country, setCountry] = useState("");
@@ -65,13 +66,12 @@ export default function WorkerOnboardingPage() {
         acceptedProofTypes: ["photo", "text"]
       });
 
-      const nextSession: HaasSession = {
+      saveSession({
         walletAddress: session.walletAddress,
         verifiedHumanId,
         workerId: worker.id
-      };
-      saveSession(nextSession);
-      setSession(nextSession);
+      });
+      refreshSession();
       setMessage(
         `Worker profile created (${worker.id}). World verification state is currently handled in pending-friendly MVP mode.`
       );
@@ -87,7 +87,7 @@ export default function WorkerOnboardingPage() {
       title="Worker Onboarding"
       subtitle="Connect wallet, create worker profile, and become bookable."
     >
-      <WalletSessionPanel onSessionChange={setSession} required />
+      <WalletSessionPanel required />
 
       <Card>
         <h2 className="text-base font-semibold">Profile Setup</h2>
