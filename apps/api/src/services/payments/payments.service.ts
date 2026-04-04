@@ -6,6 +6,7 @@ import { AppError } from "../../lib/app-error.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 import { getHederaConfig } from "../../config/hedera.config.js";
 import { getX402Config } from "../../config/x402.config.js";
+import { hbarToTinybars } from "../../lib/hbar.js";
 import {
   X402FacilitatorAdapter,
   type X402FacilitatorPaymentRequirements
@@ -113,22 +114,28 @@ export class PaymentsService {
   }): X402FacilitatorPaymentRequirements {
     const normalizedBase = this.x402Config.paymentResourceBaseUrl.replace(/\/+$/, "");
     const resource = `${normalizedBase}/api/orders/${input.orderId}/pay`;
+    const isHederaNetwork = this.x402Config.paymentNetwork
+      .toLowerCase()
+      .startsWith("hedera");
+    const isHbarAsset = input.asset.toUpperCase() === "HBAR";
+    const maxAmountRequired =
+      isHederaNetwork && isHbarAsset
+        ? hbarToTinybars(input.amount.toString()).toString()
+        : input.amount.toString();
+    const paymentAsset = isHederaNetwork && isHbarAsset ? "0.0.0" : input.asset;
     const requirements: X402FacilitatorPaymentRequirements = {
       scheme: "exact",
       network: this.x402Config.paymentNetwork,
-      maxAmountRequired: input.amount.toString(),
+      maxAmountRequired,
       resource,
       description: `${this.x402Config.paymentDescription} (${input.orderId})`,
       mimeType: this.x402Config.paymentMimeType,
       payTo: input.recipient,
       maxTimeoutSeconds: this.x402Config.paymentMaxTimeoutSeconds,
-      asset: input.asset
+      asset: paymentAsset
     };
 
-    if (
-      this.x402Config.paymentNetwork.toLowerCase().startsWith("hedera") &&
-      this.x402Config.paymentFeePayer
-    ) {
+    if (isHederaNetwork && this.x402Config.paymentFeePayer) {
       requirements.extra = {
         feePayer: this.x402Config.paymentFeePayer
       };
