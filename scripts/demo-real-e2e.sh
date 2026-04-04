@@ -8,6 +8,8 @@ REAL_CLIENT_ID="${REAL_CLIENT_ID:-client-live}"
 WORLD_ID_MODE="${WORLD_ID_MODE:-mock}"
 REAL_X402_PAYMENT_HEADER="${REAL_X402_PAYMENT_HEADER:-}"
 REAL_PAYMENT_REQUIREMENTS_FILE="${REAL_PAYMENT_REQUIREMENTS_FILE:-}"
+REAL_PAYER_PRIVATE_KEY="${REAL_PAYER_PRIVATE_KEY:-}"
+REAL_ALLOW_WEBHOOK_FALLBACK="${REAL_ALLOW_WEBHOOK_FALLBACK:-false}"
 
 required_env() {
   local name="$1"
@@ -104,14 +106,32 @@ process.stdout.write(`v1=${signature}`);
     -d "$payload"
 }
 
+to_hashscan_tx_url() {
+  local tx_id="$1"
+  local network="${2:-testnet}"
+  node -e '
+const txId = process.argv[1];
+const network = process.argv[2];
+if (typeof txId !== "string" || txId.length === 0) {
+  process.exit(0);
+}
+
+let normalized = txId;
+if (!txId.includes("@")) {
+  const match = txId.match(/^(\d+\.\d+\.\d+)-(\d+)-(\d+)$/);
+  if (match) {
+    normalized = `${match[1]}@${match[2]}.${match[3]}`;
+  }
+}
+
+process.stdout.write(`https://hashscan.io/${network}/transaction/${normalized}`);
+' "$tx_id" "$network"
+}
+
 required_env WORLD_VERIFY_PAYLOAD_FILE
 required_env X402_FACILITATOR_ID
 required_env X402_FACILITATOR_SIGNING_SECRET
 required_env REAL_PAYER_ACCOUNT
-
-if [[ -z "${REAL_X402_PAYMENT_HEADER}" ]]; then
-  required_env REAL_HEDERA_TX_ID
-fi
 
 REAL_CLIENT_ACCOUNT="${REAL_CLIENT_ACCOUNT:-${REAL_PAYER_ACCOUNT}}"
 
@@ -213,6 +233,27 @@ printf '%s\n' "${PAYMENT_REQUIREMENTS_JSON}" > "${REAL_PAYMENT_REQUIREMENTS_FILE
 log "Payment requirement created: x402PaymentId=${X402_PAYMENT_ID}"
 log "Payment requirements saved: ${REAL_PAYMENT_REQUIREMENTS_FILE}"
 
+if [[ -z "${REAL_X402_PAYMENT_HEADER}" && -n "${REAL_PAYER_PRIVATE_KEY}" ]]; then
+  log "Generating Hedera payment header from paymentRequirements via local helper"
+  REAL_X402_PAYMENT_HEADER="$(
+    pnpm --filter api exec node scripts/generate-x402-hedera-payment-header.mjs \
+      --requirements-file "${REAL_PAYMENT_REQUIREMENTS_FILE}" \
+      --payer-account "${REAL_PAYER_ACCOUNT}" \
+      --payer-private-key "${REAL_PAYER_PRIVATE_KEY}"
+  )"
+fi
+
+if [[ -z "${REAL_X402_PAYMENT_HEADER}" ]]; then
+  if [[ "${REAL_ALLOW_WEBHOOK_FALLBACK}" == "true" ]]; then
+    required_env REAL_HEDERA_TX_ID
+    log "REAL_X402_PAYMENT_HEADER is empty: using signed webhook fallback because REAL_ALLOW_WEBHOOK_FALLBACK=true"
+  else
+    echo "REAL_X402_PAYMENT_HEADER is required for direct facilitator submit. Set REAL_PAYER_PRIVATE_KEY to auto-generate it, or set REAL_ALLOW_WEBHOOK_FALLBACK=true for legacy fallback." >&2
+    exit 1
+  fi
+fi
+
+FACILITATOR_TX_ID=""
 if [[ -n "${REAL_X402_PAYMENT_HEADER}" ]]; then
   SUBMIT_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"signedPayload\":{\"paymentHeader\":\"${REAL_X402_PAYMENT_HEADER}\"},\"payerAccount\":\"${REAL_PAYER_ACCOUNT}\"}"
   SUBMIT_RESP="$(post_json "/api/orders/${ORDER_ID}/pay/submit" "${SUBMIT_PAYLOAD}")"
@@ -226,7 +267,6 @@ if [[ -n "${REAL_X402_PAYMENT_HEADER}" ]]; then
   FACILITATOR_TX_ID="$(json_get_or_fail 'hederaTxId' 'Facilitator direct submit tx id' "${SUBMIT_RESP}")"
   log "Facilitator direct submit accepted: hederaTxId=${FACILITATOR_TX_ID}"
 else
-  log "REAL_X402_PAYMENT_HEADER is empty: using signed webhook fallback (no direct facilitator submit)"
   FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"${REAL_HEDERA_TX_ID}\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"${REAL_PAYER_ACCOUNT}\",\"amount\":\"${REAL_ORDER_AMOUNT}\",\"asset\":\"${REAL_ORDER_CURRENCY}\"}"
   post_signed_x402_webhook '/api/webhooks/x402' "${FUND_WEBHOOK_PAYLOAD}" >/dev/null
   log "Signed x402 webhook accepted"
@@ -259,5 +299,37 @@ fi
 AUDIT="$(curl -fsS "${API_BASE_URL}/api/orders/${ORDER_ID}/audit")"
 TIMELINE_COUNT="$(json_get_or_fail 'timeline.length' 'Audit fetch' "${AUDIT}")"
 log "Audit timeline events: ${TIMELINE_COUNT}"
+
+ORDER_HEDERA_TX_ID="$(printf '%s' "${ORDER_FINAL}" | json_get 'funding.hederaTxId' 2>/dev/null || true)"
+FINAL_HEDERA_TX_ID="${ORDER_HEDERA_TX_ID:-${FACILITATOR_TX_ID:-${REAL_HEDERA_TX_ID:-}}}"
+HEDERA_NETWORK="${HEDERA_NETWORK:-testnet}"
+HASHSCAN_TX_URL="$(to_hashscan_tx_url "${FINAL_HEDERA_TX_ID}" "${HEDERA_NETWORK}")"
+HASHSCAN_TOPIC_URL=""
+if [[ -n "${HEDERA_HCS_TOPIC_ID:-}" ]]; then
+  HASHSCAN_TOPIC_URL="https://hashscan.io/${HEDERA_NETWORK}/topic/${HEDERA_HCS_TOPIC_ID}"
+fi
+BUNDLE_FILE="/tmp/haas-proof-bundle-${ORDER_ID}.json"
+node -e '
+const fs = require("node:fs");
+const data = {
+  orderId: process.argv[1],
+  x402PaymentId: process.argv[2],
+  directSubmitUsed: process.argv[3] === "true",
+  hederaTxId: process.argv[4] || null,
+  hashscanTxUrl: process.argv[5] || null,
+  hcsTopicId: process.argv[6] || null,
+  hashscanTopicUrl: process.argv[7] || null,
+  auditTimelineCount: Number(process.argv[8]),
+  paymentRequirementsFile: process.argv[9]
+};
+fs.writeFileSync(process.argv[10], JSON.stringify(data, null, 2));
+' "${ORDER_ID}" "${X402_PAYMENT_ID}" "$([[ -n "${FACILITATOR_TX_ID}" ]] && echo true || echo false)" "${FINAL_HEDERA_TX_ID}" "${HASHSCAN_TX_URL}" "${HEDERA_HCS_TOPIC_ID:-}" "${HASHSCAN_TOPIC_URL}" "${TIMELINE_COUNT}" "${REAL_PAYMENT_REQUIREMENTS_FILE}" "${BUNDLE_FILE}"
+log "Proof bundle saved: ${BUNDLE_FILE}"
+if [[ -n "${HASHSCAN_TX_URL}" ]]; then
+  log "HashScan transaction: ${HASHSCAN_TX_URL}"
+fi
+if [[ -n "${HASHSCAN_TOPIC_URL}" ]]; then
+  log "HashScan topic: ${HASHSCAN_TOPIC_URL}"
+fi
 
 printf '\nREAL E2E completed successfully for order %s\n' "${ORDER_ID}"
