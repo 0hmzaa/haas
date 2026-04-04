@@ -34,7 +34,7 @@ if (typeof cursor === "object") {
 post_json() {
   local endpoint="$1"
   local payload="$2"
-  curl -sS -X POST "${API_BASE_URL}${endpoint}" \
+  curl -fsS -X POST "${API_BASE_URL}${endpoint}" \
     -H 'Content-Type: application/json' \
     -d "$payload"
 }
@@ -71,7 +71,7 @@ process.stdout.write(`v1=${signature}`);
 ' "$payload" "$timestamp" "$X402_FACILITATOR_ID" "$X402_FACILITATOR_SIGNING_SECRET"
   )"
 
-  curl -sS -X POST "${API_BASE_URL}${endpoint}" \
+  curl -fsS -X POST "${API_BASE_URL}${endpoint}" \
     -H 'Content-Type: application/json' \
     -H "x-x402-facilitator-id: ${X402_FACILITATOR_ID}" \
     -H "x-x402-timestamp: ${timestamp}" \
@@ -82,7 +82,7 @@ process.stdout.write(`v1=${signature}`);
 patch_json() {
   local endpoint="$1"
   local payload="$2"
-  curl -sS -X PATCH "${API_BASE_URL}${endpoint}" \
+  curl -fsS -X PATCH "${API_BASE_URL}${endpoint}" \
     -H 'Content-Type: application/json' \
     -d "$payload"
 }
@@ -139,7 +139,7 @@ log "Order started"
 TMP_FILE="$(mktemp /tmp/haas-proof-XXXXXX.txt)"
 printf 'Queue length observed: 7 people.\nCaptured at %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$TMP_FILE"
 
-curl -sS -X POST "${API_BASE_URL}/api/orders/${ORDER_ID}/proof" \
+curl -fsS -X POST "${API_BASE_URL}/api/orders/${ORDER_ID}/proof" \
   -F "file=@${TMP_FILE};type=text/plain" \
   -F 'summary=Queue measurement delivered' >/dev/null
 
@@ -181,11 +181,11 @@ case "$MODE" in
     ;;
 esac
 
-ORDER_FINAL="$(curl -sS "${API_BASE_URL}/api/orders/${ORDER_ID}")"
+ORDER_FINAL="$(curl -fsS "${API_BASE_URL}/api/orders/${ORDER_ID}")"
 ORDER_STATUS="$(printf '%s' "$ORDER_FINAL" | json_get 'status')"
 log "Final order status: ${ORDER_STATUS}"
 
-AUDIT="$(curl -sS "${API_BASE_URL}/api/orders/${ORDER_ID}/audit")"
+AUDIT="$(curl -fsS "${API_BASE_URL}/api/orders/${ORDER_ID}/audit")"
 TIMELINE_COUNT="$(printf '%s' "$AUDIT" | json_get 'timeline.length')"
 log "Audit timeline events: ${TIMELINE_COUNT}"
 
