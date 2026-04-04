@@ -61,7 +61,7 @@ export default function WorkerReviewsPage() {
       title="Review Queue"
       subtitle="Dispute cases assigned to you as reviewer."
     >
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
       {!session?.verifiedHumanId ? (
         <Card>

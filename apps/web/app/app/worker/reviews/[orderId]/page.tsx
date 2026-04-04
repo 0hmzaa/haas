@@ -53,7 +53,12 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
   };
 
   useEffect(() => {
-    if (!orderId) {
+    if (!orderId || !session?.walletAddress) {
+      if (!session?.walletAddress) {
+        setOrder(null);
+        setDispute(null);
+        setProofs([]);
+      }
       return;
     }
 
@@ -64,7 +69,7 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
         setError(reason instanceof Error ? reason.message : "Unable to load review case")
       )
       .finally(() => setLoading(false));
-  }, [orderId]);
+  }, [orderId, session?.walletAddress]);
 
   const reviewerId = session?.verifiedHumanId ?? "";
   const reviewerAssigned =
@@ -143,9 +148,17 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
 
   return (
     <PageContainer title="Review Case" subtitle={orderId ? `Order ${orderId}` : "Dispute review"}>
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
-      {loading ? (
+      {!session?.walletAddress ? (
+        <Card>
+          <p className="text-sm text-[var(--color-muted)]">
+            Connect HashPack to access review cases.
+          </p>
+        </Card>
+      ) : null}
+
+      {session?.walletAddress && loading ? (
         <Card>
           <p className="text-sm text-[var(--color-muted)]">Loading review case...</p>
         </Card>
@@ -163,7 +176,7 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
         </Card>
       ) : null}
 
-      {order ? (
+      {session?.walletAddress && order ? (
         <Card>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -190,7 +203,7 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
         </Card>
       ) : null}
 
-      {dispute ? (
+      {session?.walletAddress && dispute ? (
         <Card>
           <h3 className="text-base font-semibold">Dispute Context</h3>
           <p className="mt-2 text-sm text-[var(--color-muted)]">
@@ -237,26 +250,28 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
         </Card>
       ) : null}
 
-      <Card>
-        <h3 className="text-base font-semibold">Proof Artifacts for Review</h3>
-        {proofs.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--color-muted)]">No proof artifacts attached.</p>
-        ) : (
-          <div className="mt-3 grid gap-2">
-            {proofs.map((proof) => (
-              <div
-                key={proof.id}
-                className="rounded-xl border border-[var(--color-border)] p-3 text-xs text-[var(--color-muted)]"
-              >
-                <p className="font-semibold text-[var(--color-text)]">{proof.originalName}</p>
-                <p>SHA256: {proof.sha256Hash}</p>
-                <p>Uploaded: {new Date(proof.uploadedAt).toISOString()}</p>
-                <p>Storage: {proof.localPath}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      {session?.walletAddress ? (
+        <Card>
+          <h3 className="text-base font-semibold">Proof Artifacts for Review</h3>
+          {proofs.length === 0 ? (
+            <p className="mt-2 text-sm text-[var(--color-muted)]">No proof artifacts attached.</p>
+          ) : (
+            <div className="mt-3 grid gap-2">
+              {proofs.map((proof) => (
+                <div
+                  key={proof.id}
+                  className="rounded-xl border border-[var(--color-border)] p-3 text-xs text-[var(--color-muted)]"
+                >
+                  <p className="font-semibold text-[var(--color-text)]">{proof.originalName}</p>
+                  <p>SHA256: {proof.sha256Hash}</p>
+                  <p>Uploaded: {new Date(proof.uploadedAt).toISOString()}</p>
+                  <p>Storage: {proof.localPath}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      ) : null}
     </PageContainer>
   );
 }

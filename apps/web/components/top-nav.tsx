@@ -12,10 +12,7 @@ export function TopNav() {
             Workers
           </Link>
           <Link href="/app" className="hover:text-[var(--color-text)]">
-            Console
-          </Link>
-          <Link href="/spec" className="hover:text-[var(--color-text)]">
-            Spec
+            Workspace
           </Link>
         </nav>
       </div>

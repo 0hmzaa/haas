@@ -55,7 +55,7 @@ export default function WorkerTasksPage() {
 
   return (
     <PageContainer title="Worker Tasks" subtitle="Track assigned work and submit proof artifacts.">
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
       {!session?.workerId ? (
         <Card>

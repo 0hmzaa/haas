@@ -47,18 +47,28 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
   };
 
   useEffect(() => {
-    if (!orderId) {
+    if (!orderId || !session?.walletAddress) {
+      if (!session?.walletAddress) {
+        setOrder(null);
+        setDispute(null);
+      }
       return;
     }
     refresh(orderId).catch((reason: unknown) =>
       setError(reason instanceof Error ? reason.message : "Unable to load order")
     );
-  }, [orderId]);
+  }, [orderId, session?.walletAddress]);
 
   const onStart = async () => {
     try {
       if (!orderId) {
         return;
+      }
+      if (!session?.workerId) {
+        throw new Error("Connect a wallet linked to a worker profile");
+      }
+      if (order && order.workerId !== session.workerId) {
+        throw new Error("This task is assigned to another worker");
       }
       setError(null);
       const payload = await startOrder(orderId);
@@ -73,6 +83,12 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
     try {
       if (!orderId || !file) {
         throw new Error("Select a proof file first");
+      }
+      if (!session?.workerId) {
+        throw new Error("Connect a wallet linked to a worker profile");
+      }
+      if (order && order.workerId !== session.workerId) {
+        throw new Error("This task is assigned to another worker");
       }
       setError(null);
       await uploadProof(orderId, {
@@ -93,6 +109,12 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
       if (!orderId) {
         return;
       }
+      if (!session?.workerId) {
+        throw new Error("Connect a wallet linked to a worker profile");
+      }
+      if (order && order.workerId !== session.workerId) {
+        throw new Error("This task is assigned to another worker");
+      }
       if (!workerStatement.trim()) {
         throw new Error("Worker statement is required");
       }
@@ -106,7 +128,15 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
 
   return (
     <PageContainer title="Task Detail" subtitle={orderId ? `Order ${orderId}` : "Order"}>
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
+
+      {!session?.walletAddress ? (
+        <Card>
+          <p className="text-sm text-[var(--color-muted)]">
+            Connect HashPack to access worker task details.
+          </p>
+        </Card>
+      ) : null}
 
       {error ? (
         <Card>
@@ -119,7 +149,7 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
         </Card>
       ) : null}
 
-      {!order ? (
+      {!session?.walletAddress ? null : !order ? (
         <Card>
           <p className="text-sm text-[var(--color-muted)]">Loading order...</p>
         </Card>

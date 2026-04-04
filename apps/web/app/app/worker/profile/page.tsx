@@ -61,7 +61,7 @@ export default function WorkerProfilePage() {
 
   return (
     <PageContainer title="Worker Profile" subtitle="Manage profile and availability.">
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
       {!session?.workerId ? (
         <Card>
