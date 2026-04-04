@@ -1,0 +1,8 @@
+{
+  "session_id": "session-mock-001",
+  "nullifier_hash": "nullifier-mock-001",
+  "walletAddress": "0.0.8503475",
+  "proof": {
+    "valid": true
+  }
+}
