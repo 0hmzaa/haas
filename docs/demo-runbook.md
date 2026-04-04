@@ -15,6 +15,11 @@
 - For World ID, keep `WORLD_ID_MODE=mock` for local demo, or switch to `WORLD_ID_MODE=live` with `WORLD_ID_VERIFY_URL`/`WORLD_ID_APP_ID`.
 - x402 webhooks are signed by default; align API + demo script with the same `X402_FACILITATOR_ID` and `X402_FACILITATOR_SIGNING_SECRET`.
 - Optional strict mode: set `X402_VERIFY_HEDERA_TX=true` to require Mirror Node confirmation of `hederaTxId` for successful funding webhooks.
+- Automatic review-window reconciliation is enabled by default:
+  - `AUTO_RECONCILIATION_ENABLED=true`
+  - `AUTO_RECONCILIATION_INTERVAL_MS=30000`
+  - `AUTO_RECONCILIATION_BATCH_SIZE=25`
+  - `AUTO_RECONCILIATION_RUN_ON_START=true`
 
 ## 2. Secret Retrieval Guide
 

@@ -1,10 +1,13 @@
 import { HcsEventType } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { assertTransition, type OrderStatus } from "@haas/shared/order";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
+import { isHederaAccountId } from "../../lib/hbar.js";
 import { HcsAuditService } from "./hcs-audit.service.js";
 import { ReputationService } from "../reputation/reputation.service.js";
 import { getHederaConfig } from "../../config/hedera.config.js";
+import { HederaRuntimeService } from "./hedera-runtime.service.js";
 
 const EVENT_LABELS: Record<HcsEventType, string> = {
   order_created: "order.created",
@@ -35,6 +38,9 @@ type MirrorTransactionRecord = {
   result: string;
   transaction_id: string;
   entity_id?: string;
+  memo_base64?: string;
+  memo?: string;
+  scheduled?: boolean;
 };
 
 type MirrorTransactionsResponse = {
@@ -67,6 +73,8 @@ type MirrorTransactionView = {
   result: string;
   name: string;
   entityId: string | null;
+  memo: string;
+  scheduled: boolean;
 };
 
 type MirrorTopicMessageView = {
@@ -79,6 +87,43 @@ type MirrorTopicMessageView = {
   messageTimestamp: string | null;
 };
 
+type ReviewWindowOrder = {
+  id: string;
+  status: OrderStatus;
+  proofSubmittedAt: Date | null;
+  reviewWindowHours: number;
+  scheduleId: string | null;
+  currency: string;
+  amount: {
+    toString(): string;
+  };
+  worker: {
+    verifiedHuman: {
+      walletAddress: string | null;
+    };
+  };
+  hederaLedger: {
+    scheduleId: string | null;
+  } | null;
+};
+
+export type ReconcileExpiredReviewWindowsInput = {
+  limit?: number;
+};
+
+export type ReconcileExpiredReviewWindowsResult = {
+  scanned: number;
+  eligible: number;
+  reconciled: number;
+  skipped: number;
+  errors: Array<{
+    orderId: string;
+    reason: string;
+  }>;
+};
+
+const LOCAL_SCHEDULE_PREFIX = "sched_local_";
+
 function decodeMirrorMessage(messageBase64: string): MirrorLifecycleMessage | null {
   try {
     const decoded = Buffer.from(messageBase64, "base64").toString("utf8");
@@ -89,10 +134,81 @@ function decodeMirrorMessage(messageBase64: string): MirrorLifecycleMessage | nu
   }
 }
 
+function decodeMemoBase64(value: string | undefined): string {
+  if (!value || value.length === 0) {
+    return "";
+  }
+
+  try {
+    return Buffer.from(value, "base64").toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
 export class ReconciliationService {
   private readonly hcsAuditService = new HcsAuditService();
   private readonly reputationService = new ReputationService();
   private readonly hederaConfig = getHederaConfig();
+  private readonly hederaRuntime = new HederaRuntimeService();
+
+  private getEscrowOrOperatorAccountId(): string | null {
+    return this.hederaConfig.defaultEscrowAccountId ?? this.hederaConfig.operatorAccountId ?? null;
+  }
+
+  private computeReviewWindowEndsAt(order: {
+    proofSubmittedAt: Date | null;
+    reviewWindowHours: number;
+  }): Date | null {
+    if (!order.proofSubmittedAt) {
+      return null;
+    }
+
+    return new Date(
+      order.proofSubmittedAt.getTime() + order.reviewWindowHours * 60 * 60 * 1000
+    );
+  }
+
+  private getEffectiveScheduleId(order: {
+    scheduleId: string | null;
+    hederaLedger: { scheduleId: string | null } | null;
+  }): string | null {
+    return order.scheduleId ?? order.hederaLedger?.scheduleId ?? null;
+  }
+
+  private async executeFallbackReleaseTransfer(order: ReviewWindowOrder): Promise<string> {
+    if (!this.hederaRuntime.isEnabled()) {
+      return `auto_release_local_${randomUUID()}`;
+    }
+
+    if (order.currency !== "HBAR") {
+      throw new AppError("Only HBAR auto-release transfers are supported", 409);
+    }
+
+    const workerAccountId = order.worker.verifiedHuman.walletAddress;
+    if (!workerAccountId || !isHederaAccountId(workerAccountId)) {
+      throw new AppError(
+        "Worker walletAddress must be a Hedera account id (for example 0.0.1234)",
+        409
+      );
+    }
+
+    const transfer = await this.hederaRuntime.executeHbarTransfer({
+      transfers: [
+        {
+          accountId: workerAccountId,
+          amountHbar: order.amount.toString()
+        }
+      ],
+      memo: `haas.order.${order.id}.auto-release.fallback`
+    });
+
+    if (!transfer) {
+      throw new AppError("Failed to execute fallback auto-release transfer", 500);
+    }
+
+    return transfer.txId;
+  }
 
   private async fetchMirrorJson<T>(path: string): Promise<T | null> {
     const baseUrl = this.hederaConfig.mirrorNodeBaseUrl.replace(/\/+$/, "");
@@ -135,7 +251,9 @@ export class ReconciliationService {
       consensusTimestamp: tx.consensus_timestamp,
       result: tx.result,
       name: tx.name,
-      entityId: tx.entity_id ?? null
+      entityId: tx.entity_id ?? null,
+      memo: tx.memo ?? decodeMemoBase64(tx.memo_base64),
+      scheduled: tx.scheduled === true
     };
   }
 
@@ -169,6 +287,136 @@ export class ReconciliationService {
         };
       })
       .filter((item): item is MirrorTopicMessageView => item !== null);
+  }
+
+  private async lookupMirrorAutoReleaseTxId(orderId: string): Promise<string | null> {
+    const escrowOrOperator = this.getEscrowOrOperatorAccountId();
+    if (!escrowOrOperator || !isHederaAccountId(escrowOrOperator)) {
+      return null;
+    }
+
+    const payload = await this.fetchMirrorJson<MirrorTransactionsResponse>(
+      `/api/v1/transactions?account.id=${encodeURIComponent(escrowOrOperator)}&limit=100&order=desc`
+    );
+
+    if (!payload?.transactions) {
+      return null;
+    }
+
+    const expectedMemos = new Set([
+      `haas.order.${orderId}.auto-release`,
+      `haas.order.${orderId}.auto-release.fallback`
+    ]);
+
+    const tx = payload.transactions.find((item) => {
+      if (item.result !== "SUCCESS") {
+        return false;
+      }
+
+      if (!item.name.includes("CRYPTO")) {
+        return false;
+      }
+
+      const memo = item.memo ?? decodeMemoBase64(item.memo_base64);
+      return expectedMemos.has(memo);
+    });
+
+    return tx?.transaction_id ?? null;
+  }
+
+  async reconcileExpiredReviewWindows(
+    input: ReconcileExpiredReviewWindowsInput = {}
+  ): Promise<ReconcileExpiredReviewWindowsResult> {
+    const limit = Number.isInteger(input.limit) && input.limit && input.limit > 0 ? input.limit : 25;
+
+    const orders = await prisma.order.findMany({
+      where: {
+        status: "REVIEW_WINDOW",
+        proofSubmittedAt: {
+          not: null
+        }
+      },
+      include: {
+        worker: {
+          select: {
+            verifiedHuman: {
+              select: {
+                walletAddress: true
+              }
+            }
+          }
+        },
+        hederaLedger: {
+          select: {
+            scheduleId: true
+          }
+        }
+      },
+      orderBy: {
+        proofSubmittedAt: "asc"
+      },
+      take: limit
+    });
+
+    let eligible = 0;
+    let reconciled = 0;
+    let skipped = 0;
+    const errors: ReconcileExpiredReviewWindowsResult["errors"] = [];
+
+    for (const order of orders as ReviewWindowOrder[]) {
+      const reviewWindowEndsAt = this.computeReviewWindowEndsAt(order);
+      if (!reviewWindowEndsAt || Date.now() < reviewWindowEndsAt.getTime()) {
+        continue;
+      }
+
+      eligible += 1;
+
+      try {
+        const effectiveScheduleId = this.getEffectiveScheduleId(order);
+        let txId: string | null = null;
+
+        if (
+          effectiveScheduleId &&
+          !effectiveScheduleId.startsWith(LOCAL_SCHEDULE_PREFIX) &&
+          this.hederaRuntime.isEnabled()
+        ) {
+          txId = await this.lookupMirrorAutoReleaseTxId(order.id);
+          if (!txId) {
+            skipped += 1;
+            continue;
+          }
+        } else {
+          txId = await this.executeFallbackReleaseTransfer(order);
+        }
+
+        if (!txId) {
+          skipped += 1;
+          continue;
+        }
+
+        await this.processHederaWebhook({
+          orderId: order.id,
+          txType: "RELEASE",
+          txId,
+          status: "SUCCESS"
+        });
+
+        reconciled += 1;
+      } catch (error) {
+        errors.push({
+          orderId: order.id,
+          reason: error instanceof Error ? error.message : "Unknown reconciliation error"
+        });
+      }
+    }
+
+    return {
+      scanned: orders.length,
+      eligible,
+      reconciled,
+      skipped,
+      errors
+    };
   }
 
   async processHederaWebhook(payload: HederaWebhookPayload) {
