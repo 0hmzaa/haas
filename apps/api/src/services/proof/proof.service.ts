@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { assertTransition, type OrderStatus } from "@haas/shared/order";
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "../../lib/prisma.js";
@@ -24,14 +25,38 @@ export type SubmitProofInput = {
   confidenceStatement?: string;
 };
 
+const STORAGE_FALLBACK_ERROR_CODES = new Set(["EACCES", "EPERM", "ENOENT"]);
+
+function getDefaultProofStorageRoot(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "storage/proofs"),
+    path.resolve(process.cwd(), "../../storage/proofs")
+  ];
+
+  const existingParentCandidate = candidates.find((candidate) =>
+    existsSync(path.dirname(candidate))
+  );
+
+  return existingParentCandidate ?? candidates[0];
+}
+
 function getProofStorageRoot(): string {
   const configured = process.env.PROOF_STORAGE_ROOT;
 
-  if (configured && path.isAbsolute(configured)) {
-    return configured;
+  if (configured && configured.length > 0) {
+    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
   }
 
-  return path.resolve(process.cwd(), "../../storage/proofs");
+  return getDefaultProofStorageRoot();
+}
+
+function shouldFallbackToDefaultStorage(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && STORAGE_FALLBACK_ERROR_CODES.has(code);
 }
 
 function sanitizeFilename(name: string): string {
@@ -56,9 +81,20 @@ export class ProofService {
     // Every timeout schedule must be cancellable, which requires an admin key.
     this.scheduledReleaseService.ensureAdminKeyConfigured();
 
-    const storageRoot = getProofStorageRoot();
-    const orderDir = path.join(storageRoot, input.orderId);
-    await mkdir(orderDir, { recursive: true });
+    let storageRoot = getProofStorageRoot();
+    let orderDir = path.join(storageRoot, input.orderId);
+
+    try {
+      await mkdir(orderDir, { recursive: true });
+    } catch (error) {
+      if (!path.isAbsolute(storageRoot) || !shouldFallbackToDefaultStorage(error)) {
+        throw error;
+      }
+
+      storageRoot = getDefaultProofStorageRoot();
+      orderDir = path.join(storageRoot, input.orderId);
+      await mkdir(orderDir, { recursive: true });
+    }
 
     const fileName = `${Date.now()}-${randomUUID()}-${sanitizeFilename(input.file.originalName)}`;
     const localPath = path.join(orderDir, fileName);

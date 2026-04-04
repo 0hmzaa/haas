@@ -5,6 +5,7 @@ API_BASE_URL="${API_BASE_URL:-http://localhost:4000}"
 REAL_ORDER_AMOUNT="${REAL_ORDER_AMOUNT:-20.00}"
 REAL_ORDER_CURRENCY="${REAL_ORDER_CURRENCY:-HBAR}"
 REAL_CLIENT_ID="${REAL_CLIENT_ID:-client-live}"
+WORLD_ID_MODE="${WORLD_ID_MODE:-mock}"
 
 required_env() {
   local name="$1"
@@ -37,6 +38,20 @@ if (typeof cursor === "object") {
   process.stdout.write(String(cursor));
 }
 ' "$path"
+}
+
+json_get_or_fail() {
+  local path="$1"
+  local label="$2"
+  local payload="$3"
+
+  local value
+  if ! value="$(printf '%s' "${payload}" | json_get "${path}" 2>/dev/null)"; then
+    echo "${label} failed: ${payload}" >&2
+    exit 1
+  fi
+
+  printf '%s' "${value}"
 }
 
 post_json() {
@@ -113,29 +128,75 @@ if (payload.proof === undefined) {
 }
 ' "${WORLD_VERIFY_PAYLOAD}"
 
+if [[ "${WORLD_ID_MODE}" == "mock" ]]; then
+  NONCE="$(date +%s)-$RANDOM"
+  WORLD_VERIFY_PAYLOAD="$(
+    node -e '
+const payload = JSON.parse(process.argv[1]);
+const nonce = process.argv[2];
+
+if (typeof payload.session_id !== "string" || payload.session_id.length === 0) {
+  payload.session_id = "session-mock-shared";
+}
+
+// Keep a stable mock session, but always rotate nullifier to avoid anti-replay failures.
+payload.nullifier_hash = `${payload.session_id}-nullifier-${nonce}`;
+
+if (payload.proof === undefined) {
+  payload.proof = { valid: true };
+}
+
+process.stdout.write(JSON.stringify(payload));
+' "${WORLD_VERIFY_PAYLOAD}" "${NONCE}"
+  )"
+fi
+
 log "Starting REAL E2E run against ${API_BASE_URL}"
 log "Expected env: WORLD_ID_MODE=live, HEDERA_ENABLED=true, X402_REQUIRE_SIGNED_WEBHOOK=true"
 
 VERIFY_RESP="$(post_json '/api/world/verify' "${WORLD_VERIFY_PAYLOAD}")"
-VERIFIED_HUMAN_ID="$(printf '%s' "${VERIFY_RESP}" | json_get 'verifiedHumanId')"
+VERIFIED_HUMAN_ID="$(json_get_or_fail 'verifiedHumanId' 'World verification' "${VERIFY_RESP}")"
 log "World verification accepted: verifiedHumanId=${VERIFIED_HUMAN_ID}"
 
 WORKER_RESP="$(
   post_json '/api/workers' \
     "{\"verifiedHumanId\":\"${VERIFIED_HUMAN_ID}\",\"displayName\":\"live-worker\",\"skills\":[\"real-world-task\"],\"baseRate\":\"15.00\"}"
 )"
-WORKER_ID="$(printf '%s' "${WORKER_RESP}" | json_get 'id')"
-log "Worker created: ${WORKER_ID}"
+
+if WORKER_ID="$(printf '%s' "${WORKER_RESP}" | json_get 'id' 2>/dev/null)"; then
+  log "Worker created: ${WORKER_ID}"
+else
+  WORKERS_LIST="$(curl -sS "${API_BASE_URL}/api/workers?limit=100&offset=0")"
+  WORKER_ID="$(
+    node -e '
+const payload = JSON.parse(process.argv[1]);
+const verifiedHumanId = process.argv[2];
+const items = Array.isArray(payload.items) ? payload.items : [];
+const existing = items.find((item) => item?.verifiedHumanId === verifiedHumanId);
+if (!existing || typeof existing.id !== "string") {
+  process.exit(2);
+}
+process.stdout.write(existing.id);
+' "${WORKERS_LIST}" "${VERIFIED_HUMAN_ID}" 2>/dev/null || true
+  )"
+
+  if [[ -z "${WORKER_ID}" ]]; then
+    echo "Worker creation failed: ${WORKER_RESP}" >&2
+    exit 1
+  fi
+
+  log "Worker reused: ${WORKER_ID}"
+fi
 
 ORDER_RESP="$(
   post_json '/api/orders' \
     "{\"clientId\":\"${REAL_CLIENT_ID}\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Live E2E task\",\"objective\":\"Validate real credential path\",\"instructions\":\"Perform live demo task and submit proof\",\"amount\":\"${REAL_ORDER_AMOUNT}\",\"currency\":\"${REAL_ORDER_CURRENCY}\"}"
 )"
-ORDER_ID="$(printf '%s' "${ORDER_RESP}" | json_get 'id')"
+ORDER_ID="$(json_get_or_fail 'id' 'Order creation' "${ORDER_RESP}")"
 log "Order created: ${ORDER_ID}"
 
 PAY_RESP="$(post_json "/api/orders/${ORDER_ID}/pay" '{}')"
-X402_PAYMENT_ID="$(printf '%s' "${PAY_RESP}" | json_get 'payment.x402PaymentId')"
+X402_PAYMENT_ID="$(json_get_or_fail 'payment.x402PaymentId' 'Payment requirement creation' "${PAY_RESP}")"
 log "Payment requirement created: x402PaymentId=${X402_PAYMENT_ID}"
 
 FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"${REAL_HEDERA_TX_ID}\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"${REAL_PAYER_ACCOUNT}\",\"amount\":\"${REAL_ORDER_AMOUNT}\",\"asset\":\"${REAL_ORDER_CURRENCY}\"}"
@@ -159,7 +220,7 @@ post_json "/api/orders/${ORDER_ID}/approve" "{\"actorId\":\"${REAL_CLIENT_ID}\"}
 log "Order approved"
 
 ORDER_FINAL="$(curl -sS "${API_BASE_URL}/api/orders/${ORDER_ID}")"
-ORDER_STATUS="$(printf '%s' "${ORDER_FINAL}" | json_get 'status')"
+ORDER_STATUS="$(json_get_or_fail 'status' 'Order fetch' "${ORDER_FINAL}")"
 
 if [[ "${ORDER_STATUS}" != "APPROVED" ]]; then
   echo "Unexpected final status: ${ORDER_STATUS}" >&2
@@ -167,7 +228,7 @@ if [[ "${ORDER_STATUS}" != "APPROVED" ]]; then
 fi
 
 AUDIT="$(curl -sS "${API_BASE_URL}/api/orders/${ORDER_ID}/audit")"
-TIMELINE_COUNT="$(printf '%s' "${AUDIT}" | json_get 'timeline.length')"
+TIMELINE_COUNT="$(json_get_or_fail 'timeline.length' 'Audit fetch' "${AUDIT}")"
 log "Audit timeline events: ${TIMELINE_COUNT}"
 
 printf '\nREAL E2E completed successfully for order %s\n' "${ORDER_ID}"

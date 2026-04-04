@@ -7,6 +7,9 @@
 - Start PostgreSQL and app services (for example via Docker Compose).
 - Ensure API is reachable on `http://localhost:4000`.
 - Set `HEDERA_SCHEDULE_ADMIN_KEY` in environment (required for review timeout schedules).
+- If your Hedera private keys are raw hex (`0x...`), you can force parsing mode with:
+  - `HEDERA_OPERATOR_PRIVATE_KEY_TYPE=ecdsa|ed25519|auto`
+  - `HEDERA_SCHEDULE_ADMIN_KEY_TYPE=ecdsa|ed25519|auto`
 - If `HEDERA_ENABLED=true`, configure operator/topic envs and ensure workers are onboarded with Hedera-style `walletAddress` (format `0.0.x`).
 - For World ID, keep `WORLD_ID_MODE=mock` for local demo, or switch to `WORLD_ID_MODE=live` with `WORLD_ID_VERIFY_URL`/`WORLD_ID_APP_ID`.
 - x402 webhooks are signed by default; align API + demo script with the same `X402_FACILITATOR_ID` and `X402_FACILITATOR_SIGNING_SECRET`.
@@ -17,9 +20,11 @@
 ### Hedera (Testnet)
 - `HEDERA_OPERATOR_ACCOUNT_ID`: get the Testnet operator account id (`0.0.x`) from your Hedera wallet/portal.
 - `HEDERA_OPERATOR_PRIVATE_KEY`: get the private key for that operator account (never commit it).
+- `HEDERA_OPERATOR_PRIVATE_KEY_TYPE`: optional, use `ecdsa` when your key is an ECDSA hex private key (`0x...`), `ed25519` for ED25519 hex, or `auto`.
 - `HEDERA_ESCROW_ACCOUNT_ID`: Hedera account used by the platform to hold locked funds (for MVP this can be the same as the operator account).
 - `HEDERA_HCS_TOPIC_ID`: create an HCS topic on Testnet, then copy its topic id (`0.0.x`).
 - `HEDERA_SCHEDULE_ADMIN_KEY`: admin private key used to create/delete scheduled transactions (required to cancel auto-release in disputes).
+- `HEDERA_SCHEDULE_ADMIN_KEY_TYPE`: optional key parser override for schedule admin key (`ecdsa`, `ed25519`, `auto`).
 - `HEDERA_MIRROR_NODE_BASE_URL`: optional, leave empty to use default Testnet mirror URL.
 
 ### World ID (live)
@@ -59,6 +64,7 @@ Minimal World payload example (`world-verify-payload.json`):
 - API is started with these variables.
 - Worker is created with a valid Hedera `walletAddress` (`0.0.x`).
 - `WORLD_VERIFY_PAYLOAD_FILE` points to an existing file.
+- In `WORLD_ID_MODE=mock`, `demo:real-e2e` auto-rotates `nullifier_hash` at runtime to avoid replay collisions across repeated runs.
 
 ## 3. Quality Gate Before Demo
 Run:
