@@ -6,6 +6,8 @@ import { AppError } from "../../lib/app-error.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 import { getHederaConfig } from "../../config/hedera.config.js";
 import { getX402Config } from "../../config/x402.config.js";
+import { X402FacilitatorAdapter } from "./x402-facilitator.adapter.js";
+import { X402FacilitatorVerifierService } from "./x402-facilitator-verifier.service.js";
 
 export type PaymentRequirement = {
   orderId: string;
@@ -15,6 +17,7 @@ export type PaymentRequirement = {
   recipient: string;
   facilitatorMode: "hedera-compatible";
   paymentEndpoint: string;
+  fundingWebhookEndpoint: string;
   facilitator: {
     id: string | null;
     requiresSignature: boolean;
@@ -25,6 +28,14 @@ export type PaymentRequirement = {
     timestampToleranceSeconds: number;
     canonicalPayloadTemplate: string;
   };
+};
+
+export type SubmitPaymentInput = {
+  orderId: string;
+  x402PaymentId: string;
+  signedPayload: unknown;
+  signature?: string;
+  payerAccount?: string;
 };
 
 export type FundingWebhookInput = {
@@ -55,7 +66,8 @@ function formatRequirement(input: {
     asset: input.asset,
     recipient: input.recipient,
     facilitatorMode: "hedera-compatible",
-    paymentEndpoint: `/api/webhooks/x402`,
+    paymentEndpoint: `/api/orders/${input.orderId}/pay/submit`,
+    fundingWebhookEndpoint: `/api/webhooks/x402`,
     facilitator: {
       id: input.facilitatorId ?? null,
       requiresSignature: input.requiresSignature,
@@ -74,6 +86,8 @@ export class PaymentsService {
   private readonly hcsAuditService = new HcsAuditService();
   private readonly hederaConfig = getHederaConfig();
   private readonly x402Config = getX402Config();
+  private readonly facilitatorAdapter = new X402FacilitatorAdapter();
+  private readonly x402Verifier = new X402FacilitatorVerifierService();
 
   private getEscrowRecipient(): string {
     return this.hederaConfig.defaultEscrowAccountId ?? "platform-held-escrow-account";
@@ -147,6 +161,111 @@ export class PaymentsService {
       requiresSignature: this.x402Config.requireSignedWebhook,
       signatureMaxAgeSeconds: this.x402Config.signatureMaxAgeSeconds
     });
+  }
+
+  async submitPaymentViaFacilitator(input: SubmitPaymentInput) {
+    if (!this.facilitatorAdapter.isConfigured()) {
+      throw new AppError(
+        "Facilitator direct-pay endpoint is not configured. Set X402_FACILITATOR_API_BASE_URL.",
+        501
+      );
+    }
+
+    const funding = await prisma.fundingRecord.findUnique({
+      where: {
+        x402PaymentId: input.x402PaymentId
+      },
+      include: {
+        order: true
+      }
+    });
+
+    if (!funding) {
+      throw new AppError("Funding record not found", 404);
+    }
+
+    if (funding.orderId !== input.orderId) {
+      throw new AppError("orderId does not match x402PaymentId", 409);
+    }
+
+    if (funding.status === "CONFIRMED") {
+      return {
+        submitted: false,
+        idempotent: true,
+        orderId: funding.orderId,
+        x402PaymentId: funding.x402PaymentId,
+        fundingStatus: funding.status,
+        orderStatus: funding.order.status,
+        hederaTxId: funding.hederaTxId
+      };
+    }
+
+    if (funding.order.status !== "PAYMENT_PENDING") {
+      throw new AppError("Order is not in PAYMENT_PENDING status", 409);
+    }
+
+    if (funding.status !== "PENDING") {
+      throw new AppError("Funding record is not pending", 409);
+    }
+
+    const facilitatorResponse = await this.facilitatorAdapter.submitSignedPayment({
+      orderId: input.orderId,
+      x402PaymentId: input.x402PaymentId,
+      signedPayload: input.signedPayload,
+      signature: input.signature,
+      payerAccount: input.payerAccount,
+      amount: funding.amount.toString(),
+      asset: funding.asset,
+      recipient: this.getEscrowRecipient()
+    });
+
+    if (!facilitatorResponse.success) {
+      return {
+        submitted: true,
+        funded: false,
+        orderId: funding.orderId,
+        x402PaymentId: funding.x402PaymentId,
+        facilitatorId: facilitatorResponse.facilitatorId ?? null
+      };
+    }
+
+    const hederaTxId = facilitatorResponse.hederaTxId;
+    if (!hederaTxId) {
+      throw new AppError("Facilitator response is missing hederaTxId", 502);
+    }
+
+    const payerAccount = facilitatorResponse.payerAccount ?? input.payerAccount;
+    if (!payerAccount || payerAccount.length === 0) {
+      throw new AppError("payerAccount is required in facilitator response", 502);
+    }
+
+    const hederaTxVerified = await this.x402Verifier.verifyFundingTransactionIfEnabled(
+      hederaTxId
+    );
+
+    const facilitatorId =
+      facilitatorResponse.facilitatorId ?? this.x402Config.facilitatorId;
+    if (!facilitatorId || facilitatorId.length === 0) {
+      throw new AppError("facilitatorId is required in facilitator response", 502);
+    }
+
+    const processed = await this.processFundingWebhook({
+      orderId: input.orderId,
+      x402PaymentId: input.x402PaymentId,
+      success: true,
+      hederaTxId,
+      facilitatorId,
+      payerAccount,
+      amount: facilitatorResponse.amount ?? funding.amount.toString(),
+      asset: facilitatorResponse.asset ?? funding.asset
+    });
+
+    return {
+      submitted: true,
+      funded: true,
+      hederaTxVerified,
+      ...processed
+    };
   }
 
   async processFundingWebhook(input: FundingWebhookInput) {

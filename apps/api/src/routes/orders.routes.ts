@@ -152,6 +152,31 @@ router.post("/:id/pay", async (req, res, next) => {
   }
 });
 
+router.post("/:id/pay/submit", async (req, res, next) => {
+  try {
+    if (typeof req.body?.x402PaymentId !== "string" || req.body.x402PaymentId.length === 0) {
+      throw new AppError("x402PaymentId is required", 400);
+    }
+
+    if (!("signedPayload" in (req.body ?? {}))) {
+      throw new AppError("signedPayload is required", 400);
+    }
+
+    const result = await paymentsService.submitPaymentViaFacilitator({
+      orderId: req.params.id,
+      x402PaymentId: req.body.x402PaymentId,
+      signedPayload: req.body.signedPayload,
+      signature: typeof req.body?.signature === "string" ? req.body.signature : undefined,
+      payerAccount:
+        typeof req.body?.payerAccount === "string" ? req.body.payerAccount : undefined
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/:id/proof", upload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) {

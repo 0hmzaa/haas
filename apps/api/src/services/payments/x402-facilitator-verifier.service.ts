@@ -117,6 +117,11 @@ export class X402FacilitatorVerifierService {
     }
   }
 
+  async verifyFundingTransactionIfEnabled(hederaTxId: string): Promise<boolean> {
+    await this.verifyHederaTransaction(hederaTxId);
+    return this.config.verifyHederaTx;
+  }
+
   async verifyFundingWebhookSignature(
     input: VerifyFundingWebhookSignatureInput
   ): Promise<VerifyFundingWebhookSignatureResult> {
