@@ -15,6 +15,9 @@
 - For World ID, keep `WORLD_ID_MODE=mock` for local demo, or switch to `WORLD_ID_MODE=live` with `WORLD_ID_VERIFY_URL`/`WORLD_ID_APP_ID`.
 - x402 webhooks are signed by default; align API + demo script with the same `X402_FACILITATOR_ID` and `X402_FACILITATOR_SIGNING_SECRET`.
 - Optional strict mode: set `X402_VERIFY_HEDERA_TX=true` to require Mirror Node confirmation of `hederaTxId` for successful funding webhooks.
+- Task policy gate is enabled by default with `TASK_POLICY_MODE=enforce`.
+  - Use `warn` to allow flagged tasks with warnings.
+  - Use `off` to disable policy checks.
 - Automatic review-window reconciliation is enabled by default:
   - `AUTO_RECONCILIATION_ENABLED=true`
   - `AUTO_RECONCILIATION_INTERVAL_MS=30000`
@@ -126,6 +129,7 @@ Recommended real-mode env:
 - Worker onboarding (`/api/world/verify` + `/api/workers`)
 - Order creation
 - x402-style payment requirement generation
+- direct pay submission path for agents: `POST /api/orders/:id/pay/submit`
 - Funding confirmation webhook
 - Order start
 - Proof upload with local storage + hash

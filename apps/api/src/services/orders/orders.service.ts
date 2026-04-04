@@ -3,6 +3,7 @@ import { assertTransition, type OrderStatus } from "@haas/shared/order";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
+import { TaskPolicyService } from "../policy/task-policy.service.js";
 
 export type CreateOrderInput = {
   clientId: string;
@@ -58,12 +59,33 @@ function formatOrder(order: OrderShape) {
 
 export class OrdersService {
   private readonly hcsAuditService = new HcsAuditService();
+  private readonly taskPolicyService = new TaskPolicyService();
 
   async createOrder(input: CreateOrderInput) {
     if (input.reviewWindowHours !== undefined) {
       if (!Number.isInteger(input.reviewWindowHours) || input.reviewWindowHours < 0) {
         throw new AppError("reviewWindowHours must be an integer >= 0", 400);
       }
+    }
+
+    const policyEvaluation = this.taskPolicyService.evaluate({
+      title: input.title,
+      objective: input.objective,
+      instructions: input.instructions
+    });
+
+    if (policyEvaluation.decision === "REJECTED") {
+      throw new AppError(
+        `Task rejected by policy: ${policyEvaluation.reasons.join(", ")}`,
+        403
+      );
+    }
+
+    if (policyEvaluation.decision === "MANUAL_REVIEW") {
+      throw new AppError(
+        `Task requires manual review before booking: ${policyEvaluation.reasons.join(", ")}`,
+        409
+      );
     }
 
     const worker = await prisma.workerProfile.findUnique({
@@ -106,11 +128,17 @@ export class OrdersService {
       actorId: input.clientId,
       payload: {
         amount: order.amount.toString(),
-        currency: order.currency
+        currency: order.currency,
+        policyDecision: policyEvaluation.decision,
+        policyReasons: policyEvaluation.reasons
       }
     });
 
-    return formatOrder(order);
+    return {
+      ...formatOrder(order),
+      policyDecision: policyEvaluation.decision,
+      policyReasons: policyEvaluation.reasons
+    };
   }
 
   async getOrderById(orderId: string) {
