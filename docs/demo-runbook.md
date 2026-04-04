@@ -12,24 +12,24 @@
 - x402 webhooks are signed by default; align API + demo script with the same `X402_FACILITATOR_ID` and `X402_FACILITATOR_SIGNING_SECRET`.
 - Optional strict mode: set `X402_VERIFY_HEDERA_TX=true` to require Mirror Node confirmation of `hederaTxId` for successful funding webhooks.
 
-## 2. Secret Retrieval Guide (FR)
+## 2. Secret Retrieval Guide
 
 ### Hedera (Testnet)
-- `HEDERA_OPERATOR_ACCOUNT_ID`: récupère l’`Account ID` de ton compte opérateur Testnet (format `0.0.x`) dans ton wallet/portal Hedera.
-- `HEDERA_OPERATOR_PRIVATE_KEY`: récupère la clé privée associée à ce compte (ne jamais la commiter).
-- `HEDERA_ESCROW_ACCOUNT_ID`: compte Hedera receveur des fonds lockés (au MVP, peut être le même que l’opérateur).
-- `HEDERA_HCS_TOPIC_ID`: crée un topic HCS sur Testnet, puis copie son id (`0.0.x`).
-- `HEDERA_SCHEDULE_ADMIN_KEY`: clé admin utilisée pour créer/supprimer les scheduled tx (obligatoire pour annuler l’auto-release en cas de dispute).
-- `HEDERA_MIRROR_NODE_BASE_URL`: optionnel, laisser vide pour utiliser la valeur par défaut testnet.
+- `HEDERA_OPERATOR_ACCOUNT_ID`: get the Testnet operator account id (`0.0.x`) from your Hedera wallet/portal.
+- `HEDERA_OPERATOR_PRIVATE_KEY`: get the private key for that operator account (never commit it).
+- `HEDERA_ESCROW_ACCOUNT_ID`: Hedera account used by the platform to hold locked funds (for MVP this can be the same as the operator account).
+- `HEDERA_HCS_TOPIC_ID`: create an HCS topic on Testnet, then copy its topic id (`0.0.x`).
+- `HEDERA_SCHEDULE_ADMIN_KEY`: admin private key used to create/delete scheduled transactions (required to cancel auto-release in disputes).
+- `HEDERA_MIRROR_NODE_BASE_URL`: optional, leave empty to use default Testnet mirror URL.
 
 ### World ID (live)
 - `WORLD_ID_MODE=live`
-- `WORLD_ID_APP_ID`: créé dans le dashboard World pour ton app.
-- `WORLD_ID_API_KEY`: clé backend de vérification associée à l’app.
-- `WORLD_ID_VERIFY_URL`: soit l’URL fournie par World, soit dérivée de l’`APP_ID` selon leur endpoint de verify.
-- `WORLD_VERIFY_PAYLOAD_FILE`: fichier JSON local contenant `session_id`, `nullifier_hash`, `proof`, et optionnel `walletAddress`.
+- `WORLD_ID_APP_ID`: created in the World dashboard for your app.
+- `WORLD_ID_API_KEY`: backend verification key linked to that app.
+- `WORLD_ID_VERIFY_URL`: either the verification URL provided by World, or one derived from `WORLD_ID_APP_ID` depending on the verify endpoint you use.
+- `WORLD_VERIFY_PAYLOAD_FILE`: local JSON file containing `session_id`, `nullifier_hash`, `proof`, and optional `walletAddress`.
 
-Exemple minimal de payload World (`world-verify-payload.json`):
+Minimal World payload example (`world-verify-payload.json`):
 
 ```json
 {
@@ -43,22 +43,22 @@ Exemple minimal de payload World (`world-verify-payload.json`):
 ```
 
 ### x402 / Facilitator
-- `X402_FACILITATOR_ID`: identifiant du facilitateur utilisé pour signer et soumettre le funding.
-- `X402_FACILITATOR_SIGNING_SECRET`: secret partagé pour la signature HMAC du webhook x402.
+- `X402_FACILITATOR_ID`: facilitator identifier used to sign and submit funding.
+- `X402_FACILITATOR_SIGNING_SECRET`: shared secret used for x402 webhook HMAC signatures.
 - `X402_REQUIRE_SIGNED_WEBHOOK=true`
-- `X402_VERIFY_HEDERA_TX=true` recommandé en réel.
-- `X402_MIRROR_NODE_BASE_URL`: optionnel, sinon fallback vers mirror Hedera config.
+- `X402_VERIFY_HEDERA_TX=true` recommended for real runs.
+- `X402_MIRROR_NODE_BASE_URL`: optional, otherwise fallback to Hedera mirror config.
 
-### Valeurs de run E2E réel
-- `REAL_HEDERA_TX_ID`: tx id Hedera réel du funding (issu du flow facilitateur).
-- `REAL_PAYER_ACCOUNT`: compte payeur Hedera réel (format `0.0.x`).
-- `REAL_ORDER_AMOUNT`, `REAL_ORDER_CURRENCY`, `REAL_CLIENT_ID`: paramètres de scénario.
+### Real E2E Run Values
+- `REAL_HEDERA_TX_ID`: real Hedera funding transaction id (from the facilitator flow).
+- `REAL_PAYER_ACCOUNT`: real Hedera payer account (`0.0.x`).
+- `REAL_ORDER_AMOUNT`, `REAL_ORDER_CURRENCY`, `REAL_CLIENT_ID`: scenario parameters.
 
-### Checklist avant run réel
-- `.env` rempli et non versionné.
-- API démarrée avec ces vars.
-- Worker créé avec `walletAddress` Hedera valide (`0.0.x`).
-- `WORLD_VERIFY_PAYLOAD_FILE` pointe vers un fichier existant.
+### Checklist Before Real Run
+- `.env` is filled and not versioned.
+- API is started with these variables.
+- Worker is created with a valid Hedera `walletAddress` (`0.0.x`).
+- `WORLD_VERIFY_PAYLOAD_FILE` points to an existing file.
 
 ## 3. Quality Gate Before Demo
 Run:
