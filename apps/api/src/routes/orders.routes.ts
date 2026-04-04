@@ -81,6 +81,8 @@ router.post("/", async (req, res, next) => {
 
     const order = await ordersService.createOrder({
       clientId: req.body.clientId,
+      clientAccountId:
+        typeof req.body.clientAccountId === "string" ? req.body.clientAccountId : undefined,
       workerId: req.body.workerId,
       title: req.body.title,
       objective: req.body.objective,

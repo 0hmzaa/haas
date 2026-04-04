@@ -14,6 +14,7 @@ import {
   Status
 } from "@hashgraph/sdk";
 import { AppError } from "../../lib/app-error.js";
+import { hbarToTinybars, isHederaAccountId, tinybarsToHbar } from "../../lib/hbar.js";
 import { getHederaConfig, type HederaConfig } from "../../config/hedera.config.js";
 
 export type HcsPublishResult = {
@@ -30,6 +31,20 @@ export type CreateScheduledReleaseInput = {
 
 export type CreateScheduledReleaseResult = {
   scheduleId: string;
+  txId: string;
+};
+
+export type HederaTransferRecipient = {
+  accountId: string;
+  amountHbar: string;
+};
+
+export type ExecuteHbarTransferInput = {
+  transfers: HederaTransferRecipient[];
+  memo?: string;
+};
+
+export type ExecuteHbarTransferResult = {
   txId: string;
 };
 
@@ -214,6 +229,73 @@ export class HederaRuntimeService {
 
     return {
       scheduleId: receipt.scheduleId.toString(),
+      txId: response.transactionId.toString()
+    };
+  }
+
+  async executeHbarTransfer(
+    input: ExecuteHbarTransferInput
+  ): Promise<ExecuteHbarTransferResult | null> {
+    if (!this.config.enabled) {
+      return null;
+    }
+
+    const runtime = ensureRuntimeConfig(this.config);
+
+    if (input.transfers.length === 0) {
+      throw new AppError("At least one transfer recipient is required", 400);
+    }
+
+    const payerAccountId =
+      this.config.defaultEscrowAccountId ?? runtime.operatorAccountId;
+
+    if (!isHederaAccountId(payerAccountId)) {
+      throw new AppError(
+        "HEDERA_ESCROW_ACCOUNT_ID must be a valid Hedera account id (for example 0.0.1234)",
+        500
+      );
+    }
+
+    const client = this.createClient();
+    const transferTx = new TransferTransaction().setTransactionMemo(
+      input.memo ?? "haas.settlement"
+    );
+
+    let totalTinybars = 0n;
+
+    for (const transfer of input.transfers) {
+      if (!isHederaAccountId(transfer.accountId)) {
+        throw new AppError(
+          "Transfer receiver account must be a Hedera account id (for example 0.0.1234)",
+          409
+        );
+      }
+
+      const tinybars = hbarToTinybars(transfer.amountHbar);
+      if (tinybars <= 0n) {
+        throw new AppError("Transfer amount must be greater than zero", 409);
+      }
+
+      totalTinybars += tinybars;
+      transferTx.addHbarTransfer(
+        AccountId.fromString(transfer.accountId),
+        Hbar.fromString(tinybarsToHbar(tinybars))
+      );
+    }
+
+    transferTx.addHbarTransfer(
+      AccountId.fromString(payerAccountId),
+      Hbar.fromString(`-${tinybarsToHbar(totalTinybars)}`)
+    );
+
+    const response = await transferTx.execute(client);
+    const receipt = await response.getReceipt(client);
+
+    if (receipt.status !== Status.Success) {
+      throw new AppError("Hedera transfer failed", 500);
+    }
+
+    return {
       txId: response.transactionId.toString()
     };
   }

@@ -6,6 +6,7 @@ import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 
 export type CreateOrderInput = {
   clientId: string;
+  clientAccountId?: string;
   workerId: string;
   title: string;
   objective: string;
@@ -25,6 +26,7 @@ export type CreateOrderInput = {
 type OrderShape = {
   id: string;
   clientId: string;
+  clientAccountId: string | null;
   workerId: string;
   title: string;
   objective: string;
@@ -76,6 +78,7 @@ export class OrdersService {
       const created = await tx.order.create({
         data: {
           clientId: input.clientId,
+          clientAccountId: input.clientAccountId,
           workerId: input.workerId,
           title: input.title,
           objective: input.objective,

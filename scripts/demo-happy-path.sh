@@ -5,6 +5,7 @@ API_BASE_URL="${API_BASE_URL:-http://localhost:4000}"
 MODE="${1:-approve}"
 X402_FACILITATOR_ID="${X402_FACILITATOR_ID:-facilitator-demo}"
 X402_FACILITATOR_SIGNING_SECRET="${X402_FACILITATOR_SIGNING_SECRET:-dev-facilitator-secret}"
+DEMO_CLIENT_ACCOUNT_ID="${DEMO_CLIENT_ACCOUNT_ID:-0.0.5005}"
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$1"
@@ -120,7 +121,7 @@ if [[ "$MODE" == "auto" ]]; then
   REVIEW_WINDOW_SUFFIX=",\"reviewWindowHours\":0"
 fi
 
-ORDER_PAYLOAD="{\"clientId\":\"client-demo\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Check cafe queue\",\"objective\":\"Measure waiting time\",\"instructions\":\"Go onsite and report queue length\",\"amount\":\"20.00\",\"currency\":\"HBAR\"${REVIEW_WINDOW_SUFFIX}}"
+ORDER_PAYLOAD="{\"clientId\":\"client-demo\",\"clientAccountId\":\"${DEMO_CLIENT_ACCOUNT_ID}\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Check cafe queue\",\"objective\":\"Measure waiting time\",\"instructions\":\"Go onsite and report queue length\",\"amount\":\"20.00\",\"currency\":\"HBAR\"${REVIEW_WINDOW_SUFFIX}}"
 ORDER_RESP="$(post_json '/api/orders' "$ORDER_PAYLOAD")"
 ORDER_ID="$(printf '%s' "$ORDER_RESP" | json_get 'id')"
 log "Order created: ${ORDER_ID}"
@@ -129,7 +130,7 @@ PAY_RESP="$(post_json "/api/orders/${ORDER_ID}/pay" '{}')"
 X402_PAYMENT_ID="$(printf '%s' "$PAY_RESP" | json_get 'payment.x402PaymentId')"
 log "Payment requirements generated: x402PaymentId=${X402_PAYMENT_ID}"
 
-FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"0.0.demo-$(date +%s)\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"0.0.5005\",\"amount\":\"20.00\",\"asset\":\"HBAR\"}"
+FUND_WEBHOOK_PAYLOAD="{\"x402PaymentId\":\"${X402_PAYMENT_ID}\",\"success\":true,\"hederaTxId\":\"0.0.demo-$(date +%s)\",\"facilitatorId\":\"${X402_FACILITATOR_ID}\",\"payerAccount\":\"${DEMO_CLIENT_ACCOUNT_ID}\",\"amount\":\"20.00\",\"asset\":\"HBAR\"}"
 post_signed_x402_webhook '/api/webhooks/x402' "$FUND_WEBHOOK_PAYLOAD" >/dev/null
 log "Funding webhook processed"
 

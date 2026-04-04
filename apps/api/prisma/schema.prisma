@@ -107,6 +107,7 @@ model WorkerProfile {
 model Order {
   id                      String              @id @default(cuid())
   clientId                String
+  clientAccountId         String?
   workerId                String
   title                   String
   objective               String

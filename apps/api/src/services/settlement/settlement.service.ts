@@ -2,16 +2,81 @@ import { randomUUID } from "node:crypto";
 import { assertTransition, type OrderStatus } from "@haas/shared/order";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
+import { isHederaAccountId } from "../../lib/hbar.js";
 import { ScheduledReleaseService } from "../hedera/scheduled-release.service.js";
+import { HederaRuntimeService } from "../hedera/hedera-runtime.service.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 import { ReputationService } from "../reputation/reputation.service.js";
 import { getHederaConfig } from "../../config/hedera.config.js";
 
 export class SettlementService {
   private readonly scheduledReleaseService = new ScheduledReleaseService();
+  private readonly hederaRuntime = new HederaRuntimeService();
   private readonly hcsAuditService = new HcsAuditService();
   private readonly reputationService = new ReputationService();
   private readonly hederaConfig = getHederaConfig();
+
+  private async executeReleaseTransfer(order: {
+    id: string;
+    currency: string;
+  } | null): Promise<string> {
+    if (!order) {
+      throw new AppError("Order not found", 404);
+    }
+
+    if (!this.hederaRuntime.isEnabled()) {
+      return `release_${randomUUID()}`;
+    }
+
+    if (order.currency !== "HBAR") {
+      throw new AppError("Only HBAR settlements are supported", 409);
+    }
+
+    const detailedOrder = await prisma.order.findUnique({
+      where: { id: order.id },
+      select: {
+        id: true,
+        amount: true,
+        worker: {
+          select: {
+            verifiedHuman: {
+              select: {
+                walletAddress: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!detailedOrder) {
+      throw new AppError("Order not found", 404);
+    }
+
+    const workerAccountId = detailedOrder.worker.verifiedHuman.walletAddress;
+    if (!workerAccountId || !isHederaAccountId(workerAccountId)) {
+      throw new AppError(
+        "Worker walletAddress must be a Hedera account id (for example 0.0.1234)",
+        409
+      );
+    }
+
+    const transfer = await this.hederaRuntime.executeHbarTransfer({
+      transfers: [
+        {
+          accountId: workerAccountId,
+          amountHbar: detailedOrder.amount.toString()
+        }
+      ],
+      memo: `haas.order.${detailedOrder.id}.approve.release`
+    });
+
+    if (!transfer) {
+      throw new AppError("Failed to execute release transfer", 500);
+    }
+
+    return transfer.txId;
+  }
 
   async approveOrder(orderId: string, actorId?: string) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -28,7 +93,7 @@ export class SettlementService {
       orderId
     );
 
-    const releaseTxId = `release_${randomUUID()}`;
+    const releaseTxId = await this.executeReleaseTransfer(order);
 
     const updatedOrder = await prisma.$transaction(async (tx) => {
       const currentOrder = await tx.order.findUnique({ where: { id: orderId } });

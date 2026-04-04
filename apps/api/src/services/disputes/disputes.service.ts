@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { assertTransition, type OrderStatus } from "@haas/shared/order";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../lib/app-error.js";
+import { hbarToTinybars, isHederaAccountId, tinybarsToHbar } from "../../lib/hbar.js";
 import { ScheduledReleaseService } from "../hedera/scheduled-release.service.js";
+import { HederaRuntimeService } from "../hedera/hedera-runtime.service.js";
 import { HcsAuditService } from "../hedera/hcs-audit.service.js";
 import { ReputationService } from "../reputation/reputation.service.js";
 import { getHederaConfig } from "../../config/hedera.config.js";
@@ -52,9 +54,120 @@ function getMajorityResolution(
 
 export class DisputesService {
   private readonly scheduledReleaseService = new ScheduledReleaseService();
+  private readonly hederaRuntime = new HederaRuntimeService();
   private readonly hcsAuditService = new HcsAuditService();
   private readonly reputationService = new ReputationService();
   private readonly hederaConfig = getHederaConfig();
+
+  private resolveLocalSettlementTxId(resolution: DisputeResolution): string {
+    return `${resolution.toLowerCase()}_${randomUUID()}`;
+  }
+
+  private ensureClientAccountId(order: { clientAccountId: string | null }): string {
+    if (!order.clientAccountId || !isHederaAccountId(order.clientAccountId)) {
+      throw new AppError(
+        "clientAccountId must be a Hedera account id (for example 0.0.1234) for refund/split settlement",
+        409
+      );
+    }
+
+    return order.clientAccountId;
+  }
+
+  private async executeResolutionTransfers(input: {
+    orderId: string;
+    resolution: DisputeResolution;
+    workerAccountId: string;
+    clientAccountId: string | null;
+    amount: string;
+    currency: string;
+  }): Promise<{ releaseTxId: string | null; refundTxId: string | null }> {
+    if (!this.hederaRuntime.isEnabled()) {
+      const txId = this.resolveLocalSettlementTxId(input.resolution);
+
+      if (input.resolution === "RELEASE_TO_WORKER") {
+        return { releaseTxId: txId, refundTxId: null };
+      }
+
+      if (input.resolution === "REFUND_CLIENT") {
+        return { releaseTxId: null, refundTxId: txId };
+      }
+
+      const splitTxId = `split_${randomUUID()}`;
+      return {
+        releaseTxId: splitTxId,
+        refundTxId: splitTxId
+      };
+    }
+
+    if (input.currency !== "HBAR") {
+      throw new AppError("Only HBAR settlements are supported", 409);
+    }
+
+    if (!isHederaAccountId(input.workerAccountId)) {
+      throw new AppError(
+        "Worker walletAddress must be a Hedera account id (for example 0.0.1234)",
+        409
+      );
+    }
+
+    if (input.resolution === "RELEASE_TO_WORKER") {
+      const release = await this.hederaRuntime.executeHbarTransfer({
+        transfers: [{ accountId: input.workerAccountId, amountHbar: input.amount }],
+        memo: `haas.order.${input.orderId}.dispute.release`
+      });
+
+      if (!release) {
+        throw new AppError("Failed to execute release transfer", 500);
+      }
+
+      return { releaseTxId: release.txId, refundTxId: null };
+    }
+
+    const clientAccountId = this.ensureClientAccountId({
+      clientAccountId: input.clientAccountId
+    });
+
+    if (input.resolution === "REFUND_CLIENT") {
+      const refund = await this.hederaRuntime.executeHbarTransfer({
+        transfers: [{ accountId: clientAccountId, amountHbar: input.amount }],
+        memo: `haas.order.${input.orderId}.dispute.refund`
+      });
+
+      if (!refund) {
+        throw new AppError("Failed to execute refund transfer", 500);
+      }
+
+      return { releaseTxId: null, refundTxId: refund.txId };
+    }
+
+    const totalTinybars = hbarToTinybars(input.amount);
+    const workerTinybars = totalTinybars / 2n;
+    const clientTinybars = totalTinybars - workerTinybars;
+
+    const splitTransfer = await this.hederaRuntime.executeHbarTransfer({
+      transfers: [
+        {
+          accountId: input.workerAccountId,
+          amountHbar: tinybarsToHbar(workerTinybars)
+        },
+        {
+          accountId: clientAccountId,
+          amountHbar: tinybarsToHbar(clientTinybars)
+        }
+      ],
+      memo: `haas.order.${input.orderId}.dispute.split`
+    });
+
+    if (!splitTransfer) {
+      throw new AppError("Failed to execute split transfer", 500);
+    }
+
+    return {
+      releaseTxId: splitTransfer.txId,
+      refundTxId: splitTransfer.txId
+    };
+  }
 
   async openDispute(
     orderId: string,
@@ -319,7 +432,45 @@ export class DisputesService {
     }
 
     const targetOrderStatus = RESOLUTION_TO_ORDER_STATUS[majorityResolution];
-    const settlementTxId = `${majorityResolution.toLowerCase()}_${randomUUID()}`;
+    const settlementOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        amount: true,
+        currency: true,
+        clientAccountId: true,
+        worker: {
+          select: {
+            verifiedHuman: {
+              select: {
+                walletAddress: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!settlementOrder) {
+      throw new AppError("Order not found", 404);
+    }
+
+    const settlementTransfers = await this.executeResolutionTransfers({
+      orderId,
+      resolution: majorityResolution,
+      workerAccountId: settlementOrder.worker.verifiedHuman.walletAddress ?? "",
+      clientAccountId: settlementOrder.clientAccountId,
+      amount: settlementOrder.amount.toString(),
+      currency: settlementOrder.currency
+    });
+
+    const settlementTxId =
+      settlementTransfers.releaseTxId ?? settlementTransfers.refundTxId;
+
+    if (!settlementTxId) {
+      throw new AppError("Settlement transaction id is missing", 500);
+    }
 
     const resolved = await prisma.$transaction(async (tx) => {
       const currentOrder = await tx.order.findUnique({ where: { id: orderId } });
@@ -353,29 +504,19 @@ export class DisputesService {
         }
       });
 
-      if (majorityResolution === "RELEASE_TO_WORKER") {
-        await tx.hederaOrderLedger.upsert({
-          where: { orderId },
-          update: { releaseTxId: settlementTxId },
-          create: {
-            orderId,
-            hederaNetwork: this.hederaConfig.network,
-            releaseTxId: settlementTxId
-          }
-        });
-      }
-
-      if (majorityResolution === "REFUND_CLIENT") {
-        await tx.hederaOrderLedger.upsert({
-          where: { orderId },
-          update: { refundTxId: settlementTxId },
-          create: {
-            orderId,
-            hederaNetwork: this.hederaConfig.network,
-            refundTxId: settlementTxId
-          }
-        });
-      }
+      await tx.hederaOrderLedger.upsert({
+        where: { orderId },
+        update: {
+          releaseTxId: settlementTransfers.releaseTxId ?? undefined,
+          refundTxId: settlementTransfers.refundTxId ?? undefined
+        },
+        create: {
+          orderId,
+          hederaNetwork: this.hederaConfig.network,
+          releaseTxId: settlementTransfers.releaseTxId ?? null,
+          refundTxId: settlementTransfers.refundTxId ?? null
+        }
+      });
 
       return {
         resolvedDispute,
@@ -389,7 +530,9 @@ export class DisputesService {
       resolution: majorityResolution,
       txId: settlementTxId,
       payload: {
-        finalOrderStatus: resolved.updatedOrder.status
+        finalOrderStatus: resolved.updatedOrder.status,
+        releaseTxId: settlementTransfers.releaseTxId,
+        refundTxId: settlementTransfers.refundTxId
       }
     });
 
@@ -397,7 +540,7 @@ export class DisputesService {
       await this.hcsAuditService.publishEvent({
         eventType: "order.refunded",
         orderId,
-        txId: settlementTxId
+        txId: settlementTransfers.refundTxId ?? settlementTxId
       });
     }
 
@@ -414,7 +557,9 @@ export class DisputesService {
       resolved: true,
       resolution: majorityResolution,
       orderStatus: resolved.updatedOrder.status,
-      txId: settlementTxId
+      txId: settlementTxId,
+      releaseTxId: settlementTransfers.releaseTxId,
+      refundTxId: settlementTransfers.refundTxId
     };
   }
 }

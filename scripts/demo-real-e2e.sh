@@ -108,6 +108,8 @@ required_env X402_FACILITATOR_SIGNING_SECRET
 required_env REAL_HEDERA_TX_ID
 required_env REAL_PAYER_ACCOUNT
 
+REAL_CLIENT_ACCOUNT="${REAL_CLIENT_ACCOUNT:-${REAL_PAYER_ACCOUNT}}"
+
 if [[ ! -f "${WORLD_VERIFY_PAYLOAD_FILE}" ]]; then
   echo "WORLD_VERIFY_PAYLOAD_FILE not found: ${WORLD_VERIFY_PAYLOAD_FILE}" >&2
   exit 1
@@ -190,7 +192,7 @@ fi
 
 ORDER_RESP="$(
   post_json '/api/orders' \
-    "{\"clientId\":\"${REAL_CLIENT_ID}\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Live E2E task\",\"objective\":\"Validate real credential path\",\"instructions\":\"Perform live demo task and submit proof\",\"amount\":\"${REAL_ORDER_AMOUNT}\",\"currency\":\"${REAL_ORDER_CURRENCY}\"}"
+    "{\"clientId\":\"${REAL_CLIENT_ID}\",\"clientAccountId\":\"${REAL_CLIENT_ACCOUNT}\",\"workerId\":\"${WORKER_ID}\",\"title\":\"Live E2E task\",\"objective\":\"Validate real credential path\",\"instructions\":\"Perform live demo task and submit proof\",\"amount\":\"${REAL_ORDER_AMOUNT}\",\"currency\":\"${REAL_ORDER_CURRENCY}\"}"
 )"
 ORDER_ID="$(json_get_or_fail 'id' 'Order creation' "${ORDER_RESP}")"
 log "Order created: ${ORDER_ID}"
