@@ -56,6 +56,10 @@ Minimal World payload example (`world-verify-payload.json`):
 ### x402 / Facilitator
 - `X402_FACILITATOR_ID`: facilitator identifier used to sign and submit funding.
 - `X402_FACILITATOR_SIGNING_SECRET`: shared secret used for x402 webhook HMAC signatures.
+- `X402_FACILITATOR_API_BASE_URL`: facilitator base URL for direct pay submission (`/api/orders/:id/pay/submit`).
+- `X402_FACILITATOR_FUNDING_PATH`: relative funding path called on facilitator API.
+- `X402_FACILITATOR_API_KEY`: optional bearer token for facilitator API calls.
+- `X402_FACILITATOR_TIMEOUT_MS`: timeout for facilitator HTTP calls.
 - `X402_REQUIRE_SIGNED_WEBHOOK=true`
 - `X402_VERIFY_HEDERA_TX=true` recommended for real runs.
 - `X402_MIRROR_NODE_BASE_URL`: optional, otherwise fallback to Hedera mirror config.
