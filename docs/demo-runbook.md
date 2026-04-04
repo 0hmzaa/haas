@@ -1,6 +1,9 @@
 # HumanAsAService Demo Runbook
 
 ## 1. Prerequisites
+- Initialize local env file once:
+  - `pnpm env:init`
+  - then edit `.env` with your real credentials
 - Start PostgreSQL and app services (for example via Docker Compose).
 - Ensure API is reachable on `http://localhost:4000`.
 - Set `HEDERA_SCHEDULE_ADMIN_KEY` in environment (required for review timeout schedules).

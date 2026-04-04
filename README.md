@@ -9,3 +9,11 @@ The canonical project specifications are:
 - `doc.md`
 
 When implementation details are ambiguous, these two documents are the source of truth.
+
+## Local Env Bootstrap
+
+Initialize `.env` locally from `.env.example`:
+
+```bash
+pnpm env:init
+```
