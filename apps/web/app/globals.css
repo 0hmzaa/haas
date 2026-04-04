@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f3ec;
+  --surface: #fffdf8;
+  --text: #1f1a17;
+  --muted: #6d6258;
+  --primary: #2f221a;
+  --primary-contrast: #f7f3ec;
+  --border: #d8ccbd;
+  --success: #1f6b3b;
+  --warning: #8a5a17;
+  --danger: #8a1f1f;
   --font-sans:
     "IBM Plex Sans", "Avenir Next", Avenir, "Segoe UI", "Helvetica Neue",
     Helvetica, Arial, sans-serif;
@@ -13,20 +21,37 @@
 
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-contrast: var(--primary-contrast);
+  --color-border: var(--border);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
-  color: var(--foreground);
+  color: var(--text);
   font-family: var(--font-sans);
+}
+
+input,
+textarea,
+select {
+  @apply rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  @apply ring-2 ring-[var(--color-primary)];
+}
+
+button {
+  @apply transition;
 }
