@@ -10,6 +10,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "demo:happy-path": "bash scripts/demo-happy-path.sh",
+    "demo:real-e2e": "bash scripts/demo-real-e2e.sh",
     "env:init": "bash scripts/init-local-env.sh"
   },
   "devDependencies": {

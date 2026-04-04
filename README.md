@@ -17,3 +17,10 @@ Initialize `.env` locally from `.env.example`:
 ```bash
 pnpm env:init
 ```
+
+Run demo scripts:
+
+```bash
+pnpm demo:happy-path
+pnpm demo:real-e2e
+```

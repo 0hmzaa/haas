@@ -39,6 +39,25 @@ Auto-release preparation flow:
 pnpm demo:happy-path auto
 ```
 
+Real credentials E2E (World live + signed x402 + Hedera tx id):
+
+```bash
+pnpm demo:real-e2e
+```
+
+Required env for `demo:real-e2e`:
+- `WORLD_VERIFY_PAYLOAD_FILE` path to a JSON payload containing `session_id`, `nullifier_hash`, `proof`, and optional `walletAddress`.
+- `X402_FACILITATOR_ID`
+- `X402_FACILITATOR_SIGNING_SECRET`
+- `REAL_HEDERA_TX_ID`
+- `REAL_PAYER_ACCOUNT`
+
+Recommended real-mode env:
+- `WORLD_ID_MODE=live`
+- `HEDERA_ENABLED=true`
+- `X402_REQUIRE_SIGNED_WEBHOOK=true`
+- `X402_VERIFY_HEDERA_TX=true`
+
 ## 4. What the Script Covers
 - Worker onboarding (`/api/world/verify` + `/api/workers`)
 - Order creation
