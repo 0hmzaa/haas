@@ -122,20 +122,76 @@ export class PaymentsService {
       throw new AppError("x402PaymentId or orderId is required", 400);
     }
 
-    const funding = await prisma.fundingRecord.findFirst({
-      where: {
-        OR: [
-          input.x402PaymentId ? { x402PaymentId: input.x402PaymentId } : undefined,
-          input.orderId ? { orderId: input.orderId } : undefined
-        ].filter(Boolean) as Prisma.FundingRecordWhereInput[]
-      },
-      include: {
-        order: true
-      }
-    });
+    const funding = input.x402PaymentId
+      ? await prisma.fundingRecord.findUnique({
+          where: { x402PaymentId: input.x402PaymentId },
+          include: {
+            order: true
+          }
+        })
+      : await prisma.fundingRecord.findUnique({
+          where: { orderId: input.orderId! },
+          include: {
+            order: true
+          }
+        });
 
     if (!funding) {
       throw new AppError("Funding record not found", 404);
+    }
+
+    if (input.orderId && funding.orderId !== input.orderId) {
+      throw new AppError("orderId does not match x402PaymentId", 409);
+    }
+
+    if (input.success) {
+      if (!input.hederaTxId || input.hederaTxId.length === 0) {
+        throw new AppError("hederaTxId is required when success=true", 400);
+      }
+
+      if (!input.facilitatorId || input.facilitatorId.length === 0) {
+        throw new AppError("facilitatorId is required when success=true", 400);
+      }
+
+      if (!input.payerAccount || input.payerAccount.length === 0) {
+        throw new AppError("payerAccount is required when success=true", 400);
+      }
+    }
+
+    if (input.amount) {
+      let submittedAmount: Prisma.Decimal;
+      try {
+        submittedAmount = new Prisma.Decimal(input.amount);
+      } catch {
+        throw new AppError("amount must be a valid decimal string", 400);
+      }
+
+      if (!submittedAmount.equals(funding.amount)) {
+        throw new AppError("amount does not match payment requirement", 409);
+      }
+    }
+
+    if (input.asset && input.asset !== funding.asset) {
+      throw new AppError("asset does not match payment requirement", 409);
+    }
+
+    if (funding.status === "CONFIRMED") {
+      if (input.success) {
+        const hederaTxMatches =
+          !funding.hederaTxId || funding.hederaTxId === input.hederaTxId;
+
+        if (!hederaTxMatches) {
+          throw new AppError("hederaTxId mismatch for already confirmed funding", 409);
+        }
+      }
+
+      return {
+        orderId: funding.orderId,
+        fundingStatus: funding.status,
+        orderStatus: funding.order.status,
+        hederaTxId: funding.hederaTxId,
+        idempotent: true
+      };
     }
 
     if (!input.success) {
@@ -147,7 +203,8 @@ export class PaymentsService {
       return {
         orderId: funding.orderId,
         fundingStatus: "FAILED",
-        orderStatus: funding.order.status
+        orderStatus: funding.order.status,
+        idempotent: false
       };
     }
 
@@ -228,7 +285,8 @@ export class PaymentsService {
       orderId: updated.updatedOrder.id,
       fundingStatus: updated.updatedFunding.status,
       orderStatus: updated.updatedOrder.status,
-      hederaTxId: updated.updatedFunding.hederaTxId
+      hederaTxId: updated.updatedFunding.hederaTxId,
+      idempotent: false
     };
   }
 }
