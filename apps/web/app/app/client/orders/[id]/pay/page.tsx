@@ -145,7 +145,7 @@ export default function PayOrderPage({ params }: PayOrderPageProps) {
 
   return (
     <PageContainer title="Fund Order" subtitle={orderId ? `Order ${orderId}` : "Order payment"}>
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
       {loading ? (
         <Card>

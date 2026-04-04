@@ -8,6 +8,7 @@ import { StatusPill } from "../../../../components/status-pill";
 import { WalletSessionPanel } from "../../../../components/wallet-session-panel";
 import { listOrders } from "../../../../lib/api-client";
 import type { OrderSummary } from "../../../../lib/models";
+import { deriveClientNamespace } from "../../../../lib/session";
 import type { HaasSession } from "../../../../lib/session";
 
 const ORDER_STATUS_OPTIONS = [
@@ -30,10 +31,11 @@ export default function ClientOrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const visibleOrders = session?.clientId ? orders : [];
+  const visibleOrders = session?.walletAddress ? orders : [];
 
   useEffect(() => {
-    if (!session?.clientId) {
+    if (!session?.walletAddress) {
+      setOrders([]);
       return;
     }
 
@@ -45,7 +47,7 @@ export default function ClientOrdersPage() {
 
       try {
         const payload = await listOrders({
-          clientId: session.clientId,
+          clientAccountId: session.walletAddress,
           status: statusFilter || undefined
         });
         if (!cancelled) {
@@ -67,7 +69,7 @@ export default function ClientOrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [session?.clientId, statusFilter]);
+  }, [session?.walletAddress, statusFilter]);
 
   return (
     <PageContainer
@@ -82,12 +84,19 @@ export default function ClientOrdersPage() {
         </Link>
       }
     >
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
       <Card className="grid gap-3 md:grid-cols-2">
         <div>
-          <p className="text-xs font-semibold text-[var(--color-muted)]">Client namespace</p>
-          <p className="mt-1 text-sm text-[var(--color-text)]">{session?.clientId ?? "client-live"}</p>
+          <p className="text-xs font-semibold text-[var(--color-muted)]">Client wallet</p>
+          <p className="mt-1 text-sm text-[var(--color-text)]">
+            {session?.walletAddress ?? "Not connected"}
+          </p>
+          {session?.walletAddress ? (
+            <p className="mt-1 text-xs text-[var(--color-muted)]">
+              Namespace: {deriveClientNamespace(session.walletAddress)}
+            </p>
+          ) : null}
         </div>
         <div>
           <label className="text-xs font-semibold text-[var(--color-muted)]">Status filter</label>
@@ -113,10 +122,10 @@ export default function ClientOrdersPage() {
         </Card>
       ) : null}
 
-      {!loading && session?.clientId && visibleOrders.length === 0 ? (
+      {!loading && session?.walletAddress && visibleOrders.length === 0 ? (
         <Card>
           <p className="text-sm text-[var(--color-muted)]">
-            No orders found for this client namespace.
+            No orders found for this client wallet.
           </p>
         </Card>
       ) : null}

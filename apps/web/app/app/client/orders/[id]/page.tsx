@@ -15,6 +15,7 @@ import {
 } from "../../../../../lib/api-client";
 import { toHashscanTxUrl } from "../../../../../lib/hedera-links";
 import type { DisputeDetail, OrderSummary, ProofArtifact } from "../../../../../lib/models";
+import { deriveClientNamespace } from "../../../../../lib/session";
 import type { HaasSession } from "../../../../../lib/session";
 
 type ClientOrderDetailPageProps = {
@@ -77,15 +78,15 @@ export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageP
 
   const onApprove = async () => {
     try {
-      if (!orderId || !session?.clientId) {
-        throw new Error("Client namespace is required in wallet session");
+      if (!orderId || !session?.walletAddress) {
+        throw new Error("Connect a wallet to approve this order");
       }
 
       setActing(true);
       setError(null);
       setMessage(null);
 
-      const result = await approveOrder(orderId, session.clientId);
+      const result = await approveOrder(orderId, deriveClientNamespace(session.walletAddress));
       await refresh(orderId);
       setMessage(
         result.releaseTxId
@@ -104,6 +105,9 @@ export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageP
       if (!orderId) {
         return;
       }
+      if (!session?.walletAddress) {
+        throw new Error("Connect a wallet to open a dispute");
+      }
 
       if (!clientStatement.trim()) {
         throw new Error("Client statement is required to open dispute");
@@ -115,7 +119,8 @@ export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageP
 
       const disputePayload = await openDispute(orderId, {
         reasonCode: reasonCode.trim(),
-        clientStatement: clientStatement.trim()
+        clientStatement: clientStatement.trim(),
+        actorId: deriveClientNamespace(session.walletAddress)
       });
 
       await refresh(orderId);
@@ -132,7 +137,7 @@ export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageP
       title="Client Order Detail"
       subtitle={orderId ? `Order ${orderId}` : "Order detail"}
     >
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
       {loading ? (
         <Card>

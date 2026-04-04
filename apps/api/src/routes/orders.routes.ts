@@ -147,6 +147,8 @@ router.get("/", async (req, res, next) => {
     const orders = await ordersService.listOrders({
       workerId: typeof req.query.workerId === "string" ? req.query.workerId : undefined,
       clientId: typeof req.query.clientId === "string" ? req.query.clientId : undefined,
+      clientAccountId:
+        typeof req.query.clientAccountId === "string" ? req.query.clientAccountId : undefined,
       reviewerId:
         typeof req.query.reviewerId === "string" ? req.query.reviewerId : undefined,
       status: parseOrderStatus(req.query.status),

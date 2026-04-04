@@ -7,7 +7,7 @@ import { PageContainer } from "../../../../../components/page-container";
 import { WalletSessionPanel } from "../../../../../components/wallet-session-panel";
 import { createOrder, listWorkers } from "../../../../../lib/api-client";
 import type { WorkerProfile } from "../../../../../lib/models";
-import { isHederaAccountId, type HaasSession } from "../../../../../lib/session";
+import { deriveClientNamespace, type HaasSession } from "../../../../../lib/session";
 
 export default function CreateOrderPage() {
   const router = useRouter();
@@ -57,8 +57,8 @@ export default function CreateOrderPage() {
 
   const submit = async () => {
     try {
-      if (!session?.clientId) {
-        throw new Error("Connect wallet session first to define a client namespace");
+      if (!session?.walletAddress) {
+        throw new Error("Connect wallet session first");
       }
 
       if (!workerId.trim()) {
@@ -78,12 +78,11 @@ export default function CreateOrderPage() {
       setError(null);
       setMessage(null);
 
+      const clientNamespace = deriveClientNamespace(session.walletAddress);
+
       const order = await createOrder({
-        clientId: session.clientId,
-        clientAccountId:
-          session.walletAddress && isHederaAccountId(session.walletAddress)
-            ? session.walletAddress
-            : undefined,
+        clientId: clientNamespace,
+        clientAccountId: session.walletAddress,
         workerId: workerId.trim(),
         title: title.trim(),
         objective: objective.trim(),
@@ -107,7 +106,7 @@ export default function CreateOrderPage() {
       title="Create Order"
       subtitle="Directly book one worker for one scoped real-world task."
     >
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
       <Card>
         <h2 className="text-base font-semibold">Order Form</h2>

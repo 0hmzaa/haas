@@ -27,6 +27,7 @@ export type CreateOrderInput = {
 export type ListOrdersQuery = {
   workerId?: string;
   clientId?: string;
+  clientAccountId?: string;
   reviewerId?: string;
   status?: OrderStatus;
   limit: number;
@@ -217,6 +218,7 @@ export class OrdersService {
     const where: Prisma.OrderWhereInput = {
       workerId: query.workerId,
       clientId: query.clientId,
+      clientAccountId: query.clientAccountId,
       status: query.status,
       id: reviewerOrderIds ? { in: reviewerOrderIds } : undefined
     };

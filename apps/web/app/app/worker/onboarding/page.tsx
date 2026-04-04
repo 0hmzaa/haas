@@ -20,8 +20,6 @@ export default function WorkerOnboardingPage() {
   const [timezone, setTimezone] = useState("Europe/Paris");
   const [skills, setSkills] = useState("delivery, verification");
   const [baseRate, setBaseRate] = useState("10.00");
-  const [status, setStatus] = useState("AVAILABLE");
-  const [proofTypes, setProofTypes] = useState("photo, text");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,18 +61,14 @@ export default function WorkerOnboardingPage() {
           .map((skill) => skill.trim())
           .filter((skill) => skill.length > 0),
         baseRate: baseRate.trim(),
-        availabilityStatus: status.trim() || "AVAILABLE",
-        acceptedProofTypes: proofTypes
-          .split(",")
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0)
+        availabilityStatus: "AVAILABLE",
+        acceptedProofTypes: ["photo", "text"]
       });
 
       const nextSession: HaasSession = {
         walletAddress: session.walletAddress,
         verifiedHumanId,
-        workerId: worker.id,
-        clientId: session.clientId || "client-live"
+        workerId: worker.id
       };
       saveSession(nextSession);
       setSession(nextSession);
@@ -93,7 +87,7 @@ export default function WorkerOnboardingPage() {
       title="Worker Onboarding"
       subtitle="Connect wallet, create worker profile, and become bookable."
     >
-      <WalletSessionPanel onSessionChange={setSession} />
+      <WalletSessionPanel onSessionChange={setSession} required />
 
       <Card>
         <h2 className="text-base font-semibold">Profile Setup</h2>
@@ -124,11 +118,6 @@ export default function WorkerOnboardingPage() {
             placeholder="Timezone"
           />
           <input
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-            placeholder="Availability status"
-          />
-          <input
             value={skills}
             onChange={(event) => setSkills(event.target.value)}
             placeholder="Skills (comma separated)"
@@ -139,12 +128,6 @@ export default function WorkerOnboardingPage() {
             onChange={(event) => setBio(event.target.value)}
             placeholder="Description"
             className="min-h-28 md:col-span-2"
-          />
-          <input
-            value={proofTypes}
-            onChange={(event) => setProofTypes(event.target.value)}
-            placeholder="Accepted proof types (comma separated)"
-            className="md:col-span-2"
           />
         </div>
 

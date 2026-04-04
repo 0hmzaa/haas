@@ -151,6 +151,7 @@ export async function createOrder(input: {
 export async function listOrders(filters: {
   workerId?: string;
   clientId?: string;
+  clientAccountId?: string;
   reviewerId?: string;
   status?: string;
 }) {
@@ -158,6 +159,7 @@ export async function listOrders(filters: {
     `/api/orders${queryString({
       workerId: filters.workerId,
       clientId: filters.clientId,
+      clientAccountId: filters.clientAccountId,
       reviewerId: filters.reviewerId,
       status: filters.status
     })}`
@@ -251,6 +253,7 @@ export async function approveOrder(orderId: string, actorId: string) {
 export async function openDispute(orderId: string, input: {
   reasonCode: string;
   clientStatement: string;
+  actorId?: string;
 }) {
   return request<{
     id: string;
