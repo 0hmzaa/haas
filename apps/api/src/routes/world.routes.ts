@@ -20,6 +20,20 @@ function createWorldVerificationAdapter(): WorldVerificationAdapter {
 
 const worldService = new WorldService(createWorldVerificationAdapter());
 
+router.get("/identity", async (req, res, next) => {
+  try {
+    const walletAddress = req.query.walletAddress;
+    if (typeof walletAddress !== "string" || walletAddress.length === 0) {
+      throw new AppError("walletAddress query parameter is required", 400);
+    }
+
+    const identity = await worldService.getIdentityByWallet(walletAddress);
+    res.status(200).json(identity);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/verify", async (req, res, next) => {
   try {
     const sessionId = req.body?.session_id;

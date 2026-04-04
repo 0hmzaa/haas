@@ -24,6 +24,15 @@ export type CreateOrderInput = {
   reviewWindowHours?: number;
 };
 
+export type ListOrdersQuery = {
+  workerId?: string;
+  clientId?: string;
+  reviewerId?: string;
+  status?: OrderStatus;
+  limit: number;
+  offset: number;
+};
+
 type OrderShape = {
   id: string;
   clientId: string;
@@ -54,6 +63,34 @@ function formatOrder(order: OrderShape) {
     ...order,
     amount: order.amount.toString(),
     reviewerFeeReserve: order.reviewerFeeReserve.toString()
+  };
+}
+
+function formatOrderWithRelations(order: Prisma.OrderGetPayload<{
+  include: {
+    funding: true;
+    disputeCase: true;
+  };
+}>) {
+  return {
+    ...formatOrder(order),
+    funding: order.funding
+      ? {
+          status: order.funding.status,
+          x402PaymentId: order.funding.x402PaymentId,
+          hederaTxId: order.funding.hederaTxId,
+          payerAccount: order.funding.payerAccount,
+          fundedAt: order.funding.fundedAt
+        }
+      : null,
+    dispute: order.disputeCase
+      ? {
+          id: order.disputeCase.id,
+          status: order.disputeCase.status,
+          resolution: order.disputeCase.resolution,
+          assignedReviewerIds: order.disputeCase.assignedReviewerIds
+        }
+      : null
   };
 }
 
@@ -142,13 +179,62 @@ export class OrdersService {
   }
 
   async getOrderById(orderId: string) {
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        funding: true,
+        disputeCase: true
+      }
+    });
 
     if (!order) {
       throw new AppError("Order not found", 404);
     }
 
-    return formatOrder(order);
+    return formatOrderWithRelations(order);
+  }
+
+  async listOrders(query: ListOrdersQuery) {
+    let reviewerOrderIds: string[] | undefined;
+    if (query.reviewerId) {
+      const disputes = await prisma.disputeCase.findMany({
+        where: {
+          assignedReviewerIds: {
+            array_contains: [query.reviewerId]
+          } as Prisma.JsonNullableFilter
+        },
+        select: {
+          orderId: true
+        }
+      });
+
+      reviewerOrderIds = disputes.map((dispute) => dispute.orderId);
+      if (reviewerOrderIds.length === 0) {
+        return [];
+      }
+    }
+
+    const where: Prisma.OrderWhereInput = {
+      workerId: query.workerId,
+      clientId: query.clientId,
+      status: query.status,
+      id: reviewerOrderIds ? { in: reviewerOrderIds } : undefined
+    };
+
+    const orders = await prisma.order.findMany({
+      where,
+      include: {
+        funding: true,
+        disputeCase: true
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: query.limit,
+      skip: query.offset
+    });
+
+    return orders.map((order) => formatOrderWithRelations(order));
   }
 
   async startOrder(orderId: string) {

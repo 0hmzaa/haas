@@ -16,8 +16,53 @@ export type VerifyWorldResponse = {
   worldVerified: boolean;
 };
 
+export type WalletIdentityResponse = {
+  verifiedHumanId: string;
+  worldSessionId: string;
+  walletAddress: string | null;
+  worldVerified: boolean;
+  worker: {
+    id: string;
+    displayName: string;
+    reviewerEligible: boolean;
+  } | null;
+};
+
 export class WorldService {
   constructor(private readonly adapter: WorldVerificationAdapter) {}
+
+  async getIdentityByWallet(walletAddress: string): Promise<WalletIdentityResponse> {
+    const identity = await prisma.verifiedHuman.findUnique({
+      where: { walletAddress },
+      include: {
+        workerProfile: {
+          select: {
+            id: true,
+            displayName: true,
+            reviewerEligible: true
+          }
+        }
+      }
+    });
+
+    if (!identity) {
+      throw new AppError("No verified identity found for walletAddress", 404);
+    }
+
+    return {
+      verifiedHumanId: identity.id,
+      worldSessionId: identity.worldSessionId,
+      walletAddress: identity.walletAddress,
+      worldVerified: identity.worldVerified,
+      worker: identity.workerProfile
+        ? {
+            id: identity.workerProfile.id,
+            displayName: identity.workerProfile.displayName,
+            reviewerEligible: identity.workerProfile.reviewerEligible
+          }
+        : null
+    };
+  }
 
   async verifyAndUpsert(input: VerifyWorldRequest): Promise<VerifyWorldResponse> {
     const verified = await this.adapter.verify({

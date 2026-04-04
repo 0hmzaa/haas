@@ -1,4 +1,5 @@
 import { DisputeResolution, Prisma } from "@prisma/client";
+import { ORDER_STATUSES, type OrderStatus } from "@haas/shared/order";
 import { Router } from "express";
 import multer from "multer";
 import { AppError } from "../lib/app-error.js";
@@ -22,6 +23,27 @@ const upload = multer({
     fileSize: 25 * 1024 * 1024
   }
 });
+
+function parsePagination(value: unknown, fallback: number): number {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) || parsed < 0 ? fallback : parsed;
+}
+
+function parseOrderStatus(value: unknown): OrderStatus | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  if (ORDER_STATUSES.includes(value as OrderStatus)) {
+    return value as OrderStatus;
+  }
+
+  return undefined;
+}
 
 function parseJsonField(value: unknown): Prisma.InputJsonValue | undefined {
   if (!value) {
@@ -115,6 +137,24 @@ router.post("/", async (req, res, next) => {
     });
 
     res.status(201).json(order);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/", async (req, res, next) => {
+  try {
+    const orders = await ordersService.listOrders({
+      workerId: typeof req.query.workerId === "string" ? req.query.workerId : undefined,
+      clientId: typeof req.query.clientId === "string" ? req.query.clientId : undefined,
+      reviewerId:
+        typeof req.query.reviewerId === "string" ? req.query.reviewerId : undefined,
+      status: parseOrderStatus(req.query.status),
+      limit: Math.min(parsePagination(req.query.limit, 20), 100),
+      offset: parsePagination(req.query.offset, 0)
+    });
+
+    res.status(200).json({ items: orders, count: orders.length });
   } catch (error) {
     next(error);
   }
