@@ -36,6 +36,24 @@ export type WorldVerifyResponse = {
   worldVerified: boolean;
 };
 
+export type WorldRpSignatureResponse =
+  | {
+      mode: "mock";
+    }
+  | {
+      mode: "live";
+      appId: string;
+      action: string;
+      allowLegacyProofs: boolean;
+      rpContext: {
+        rp_id: string;
+        nonce: string;
+        created_at: number;
+        expires_at: number;
+        signature: string;
+      };
+    };
+
 export type WalletIdentityResponse = {
   verifiedHumanId: string;
   worldSessionId: string;

@@ -9,6 +9,7 @@ import type {
   WalletIdentityResponse,
   WorkerListResponse,
   WorkerProfile,
+  WorldRpSignatureResponse,
   WorldVerifyResponse
 } from "./models";
 
@@ -113,12 +114,25 @@ export async function updateWorker(workerId: string, input: Partial<{
   });
 }
 
-export async function verifyWorld(input: {
-  session_id: string;
-  nullifier_hash: string;
-  walletAddress: string;
-  proof: Record<string, unknown>;
-}) {
+export async function getWorldRpSignature() {
+  return request<WorldRpSignatureResponse>("/api/world/rp-signature");
+}
+
+export async function verifyWorld(
+  input:
+    | {
+        session_id: string;
+        nullifier_hash: string;
+        walletAddress: string;
+        proof: Record<string, unknown>;
+      }
+    | {
+        walletAddress: string;
+        result: Record<string, unknown>;
+        session_id?: string;
+        nullifier_hash?: string;
+      }
+) {
   return request<WorldVerifyResponse>("/api/world/verify", {
     method: "POST",
     body: JSON.stringify(input)

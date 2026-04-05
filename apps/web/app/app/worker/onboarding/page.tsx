@@ -2,14 +2,25 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  IDKitRequestWidget,
+  orbLegacy,
+  type IDKitErrorCodes,
+  type IDKitResult
+} from "@worldcoin/idkit";
 import { Card } from "../../../../components/card";
 import { PageContainer } from "../../../../components/page-container";
 import { Stepper } from "../../../../components/stepper";
 import { WalletSessionPanel } from "../../../../components/wallet-session-panel";
 import { Button } from "../../../../components/button";
-import { createWorker, verifyWorld } from "../../../../lib/api-client";
+import {
+  createWorker,
+  getWorldRpSignature,
+  verifyWorld
+} from "../../../../lib/api-client";
 import { useSession } from "../../../../lib/session-context";
 import { saveSession } from "../../../../lib/session";
+import type { WorldRpSignatureResponse } from "../../../../lib/models";
 
 function randomToken(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
@@ -28,6 +39,9 @@ export default function WorkerOnboardingPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [verifyingIdentity, setVerifyingIdentity] = useState(false);
+  const [worldRequest, setWorldRequest] = useState<WorldRpSignatureResponse | null>(null);
+  const [worldWidgetOpen, setWorldWidgetOpen] = useState(false);
 
   const currentStep = useMemo(() => {
     if (session?.workerId) return 3;
@@ -35,6 +49,79 @@ export default function WorkerOnboardingPage() {
     if (session?.walletAddress) return 1;
     return 0;
   }, [session]);
+
+  const markIdentityVerified = (verifiedHumanId: string) => {
+    if (!session?.walletAddress) {
+      return;
+    }
+
+    saveSession({
+      walletAddress: session.walletAddress,
+      verifiedHumanId,
+      workerId: session.workerId ?? null
+    });
+    refreshSession();
+  };
+
+  const verifyIdentityWithMock = async () => {
+    if (!session?.walletAddress) {
+      throw new Error("Connect a HashPack wallet first");
+    }
+
+    const verified = await verifyWorld({
+      session_id: randomToken("session"),
+      nullifier_hash: randomToken("nullifier"),
+      walletAddress: session.walletAddress,
+      proof: { valid: true }
+    });
+
+    markIdentityVerified(verified.verifiedHumanId);
+    setMessage("Identity verified in mock mode.");
+  };
+
+  const beginWorldVerification = async () => {
+    try {
+      if (!session?.walletAddress) {
+        throw new Error("Connect a HashPack wallet first");
+      }
+
+      setVerifyingIdentity(true);
+      setError(null);
+      setMessage(null);
+
+      const requestContext = await getWorldRpSignature();
+      setWorldRequest(requestContext);
+
+      if (requestContext.mode === "mock") {
+        await verifyIdentityWithMock();
+        return;
+      }
+
+      setWorldWidgetOpen(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "World verification failed");
+    } finally {
+      setVerifyingIdentity(false);
+    }
+  };
+
+  const handleWorldVerification = async (result: IDKitResult) => {
+    if (!session?.walletAddress) {
+      throw new Error("Connect a HashPack wallet first");
+    }
+
+    const verified = await verifyWorld({
+      walletAddress: session.walletAddress,
+      result: result as unknown as Record<string, unknown>
+    });
+
+    markIdentityVerified(verified.verifiedHumanId);
+    setMessage("World ID verification completed.");
+  };
+
+  const handleWorldError = (code: IDKitErrorCodes) => {
+    setError(`World ID verification failed (${code})`);
+  };
 
   const submit = async () => {
     try {
@@ -44,24 +131,16 @@ export default function WorkerOnboardingPage() {
       if (!displayName.trim()) {
         throw new Error("Display name is required");
       }
+      if (!session.verifiedHumanId) {
+        throw new Error("Complete World ID verification before creating your worker profile");
+      }
 
       setLoading(true);
       setError(null);
       setMessage(null);
 
-      const verifiedHumanId =
-        session.verifiedHumanId ??
-        (
-          await verifyWorld({
-            session_id: randomToken("session"),
-            nullifier_hash: randomToken("nullifier"),
-            walletAddress: session.walletAddress,
-            proof: { valid: true },
-          })
-        ).verifiedHumanId;
-
       const worker = await createWorker({
-        verifiedHumanId,
+        verifiedHumanId: session.verifiedHumanId,
         displayName: displayName.trim(),
         bio: bio.trim(),
         country: country.trim(),
@@ -77,8 +156,8 @@ export default function WorkerOnboardingPage() {
 
       saveSession({
         walletAddress: session.walletAddress,
-        verifiedHumanId,
-        workerId: worker.id,
+        verifiedHumanId: session.verifiedHumanId,
+        workerId: worker.id
       });
       refreshSession();
       setMessage(`Worker profile created (${worker.id}).`);
@@ -117,17 +196,27 @@ export default function WorkerOnboardingPage() {
         <Card>
           <h2 className="text-base font-bold">World ID Verification</h2>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            World verification is triggered automatically when you submit your profile.
-            This proves you are a unique human.
+            Verify your identity with World ID before creating your worker profile.
           </p>
           <p className="mt-2 text-xs text-[var(--color-muted)]">
             Wallet connected: <span className="font-mono font-bold text-[var(--color-text)]">{session?.walletAddress}</span>
           </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button onClick={beginWorldVerification} loading={verifyingIdentity}>
+              Verify with World ID
+            </Button>
+            {error ? <p className="text-xs font-semibold text-[var(--color-danger)]">{error}</p> : null}
+          </div>
+          {message ? (
+            <p className="mt-2 text-xs font-semibold text-[var(--color-success)]">
+              {message}
+            </p>
+          ) : null}
         </Card>
       ) : null}
 
       {/* Step 1-2: Profile form */}
-      {currentStep >= 1 && currentStep < 3 ? (
+      {currentStep >= 2 && currentStep < 3 ? (
         <Card>
           <h2 className="text-base font-bold">Profile Setup</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -203,6 +292,24 @@ export default function WorkerOnboardingPage() {
             {error ? <p className="text-xs font-semibold text-[var(--color-danger)]">{error}</p> : null}
           </div>
         </Card>
+      ) : null}
+
+      {worldRequest?.mode === "live" ? (
+        <IDKitRequestWidget
+          open={worldWidgetOpen}
+          onOpenChange={setWorldWidgetOpen}
+          app_id={worldRequest.appId as `app_${string}`}
+          action={worldRequest.action}
+          allow_legacy_proofs={worldRequest.allowLegacyProofs}
+          rp_context={worldRequest.rpContext}
+          preset={orbLegacy({ signal: session.walletAddress })}
+          autoClose
+          handleVerify={handleWorldVerification}
+          onSuccess={() => {
+            setWorldWidgetOpen(false);
+          }}
+          onError={handleWorldError}
+        />
       ) : null}
 
       {/* Step 3: Success */}

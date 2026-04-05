@@ -12,7 +12,7 @@
   - `HEDERA_SCHEDULE_ADMIN_KEY_TYPE=ecdsa|ed25519|auto`
 - If `HEDERA_ENABLED=true`, configure operator/topic envs and ensure workers are onboarded with Hedera-style `walletAddress` (format `0.0.x`).
 - For on-chain dispute outcomes (`REFUND_CLIENT` / `SPLIT_PAYMENT`), include `clientAccountId` (`0.0.x`) when creating orders.
-- For World ID, keep `WORLD_ID_MODE=mock` for local demo, or switch to `WORLD_ID_MODE=live` with `WORLD_ID_VERIFY_URL`/`WORLD_ID_APP_ID`.
+- For World ID, keep `WORLD_ID_MODE=mock` for local demo, or switch to `WORLD_ID_MODE=live` with `WORLD_ID_APP_ID` + `WORLD_ID_RP_ID` + `WORLD_ID_RP_SIGNING_KEY`.
 - x402 webhooks are signed by default; align API + demo script with the same `X402_FACILITATOR_ID` and `X402_FACILITATOR_SIGNING_SECRET`.
 - Optional strict mode: set `X402_VERIFY_HEDERA_TX=true` to require Mirror Node confirmation of `hederaTxId` for successful funding webhooks.
 - Task policy gate is enabled by default with `TASK_POLICY_MODE=enforce`.
@@ -39,9 +39,13 @@
 ### World ID (live)
 - `WORLD_ID_MODE=live`
 - `WORLD_ID_APP_ID`: created in the World dashboard for your app.
+- `WORLD_ID_RP_ID`: RP id from the World dashboard.
+- `WORLD_ID_RP_SIGNING_KEY`: RP signing private key (server-only secret).
+- `WORLD_ID_ACTION_WORKER_ONBOARDING`: action id used for worker onboarding proof requests.
+- `WORLD_ID_SIGNATURE_TTL_SECONDS`: RP signature TTL for `/api/world/rp-signature`.
 - `WORLD_ID_API_KEY`: backend verification key linked to that app.
-- `WORLD_ID_VERIFY_URL`: either the verification URL provided by World, or one derived from `WORLD_ID_APP_ID` depending on the verify endpoint you use.
-- `WORLD_VERIFY_PAYLOAD_FILE`: local JSON file containing `session_id`, `nullifier_hash`, `proof`, and optional `walletAddress`.
+- `WORLD_ID_VERIFY_URL`: optional override (if empty, backend derives `https://developer.worldcoin.org/api/v4/verify/{WORLD_ID_RP_ID}`).
+- `WORLD_VERIFY_PAYLOAD_FILE`: local JSON payload used by `demo:real-e2e` (legacy/mock compatible format).
 
 Minimal World payload example (`world-verify-payload.json`):
 
@@ -55,6 +59,9 @@ Minimal World payload example (`world-verify-payload.json`):
   }
 }
 ```
+
+For frontend onboarding (live flow), the client sends full IDKit v4 result to `POST /api/world/verify`:
+- `{ walletAddress, result }` where `result` is the World IDKit proof result object.
 
 ### x402 / Facilitator
 - `X402_FACILITATOR_ID`: facilitator identifier used to sign and submit funding.
@@ -133,6 +140,9 @@ Required env for `demo:real-e2e`:
 
 Recommended real-mode env:
 - `WORLD_ID_MODE=live`
+- `WORLD_ID_APP_ID`
+- `WORLD_ID_RP_ID`
+- `WORLD_ID_RP_SIGNING_KEY`
 - `HEDERA_ENABLED=true`
 - `X402_REQUIRE_SIGNED_WEBHOOK=true`
 - `X402_VERIFY_HEDERA_TX=true`

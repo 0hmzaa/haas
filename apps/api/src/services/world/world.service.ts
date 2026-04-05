@@ -3,9 +3,9 @@ import { AppError } from "../../lib/app-error.js";
 import type { WorldVerificationAdapter } from "./world.adapter.js";
 
 export type VerifyWorldRequest = {
-  proof: unknown;
-  sessionId: string;
-  nullifierHash: string;
+  proofPayload: Record<string, unknown>;
+  sessionId?: string;
+  nullifierHash?: string;
   walletAddress?: string;
 };
 
@@ -66,18 +66,26 @@ export class WorldService {
 
   async verifyAndUpsert(input: VerifyWorldRequest): Promise<VerifyWorldResponse> {
     const verified = await this.adapter.verify({
-      proof: input.proof,
+      proofPayload: input.proofPayload,
       sessionId: input.sessionId,
-      nullifierHash: input.nullifierHash
+      nullifierHash: input.nullifierHash,
+      walletAddress: input.walletAddress
     });
 
     if (!verified.isValid) {
       throw new AppError("World verification failed", 400);
     }
 
+    const resolvedSessionId = verified.sessionId;
+    const resolvedNullifierHash = verified.nullifierHash;
+
+    if (!resolvedSessionId || !resolvedNullifierHash) {
+      throw new AppError("World verification is missing session or nullifier", 400);
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const existingNullifier = await tx.worldNullifier.findUnique({
-        where: { nullifier: verified.nullifierHash }
+        where: { nullifier: resolvedNullifierHash }
       });
 
       if (existingNullifier) {
@@ -85,7 +93,7 @@ export class WorldService {
       }
 
       const existingHuman = await tx.verifiedHuman.findUnique({
-        where: { worldSessionId: verified.sessionId }
+        where: { worldSessionId: resolvedSessionId }
       });
 
       const verifiedHuman = existingHuman
@@ -98,7 +106,7 @@ export class WorldService {
           })
         : await tx.verifiedHuman.create({
             data: {
-              worldSessionId: verified.sessionId,
+              worldSessionId: resolvedSessionId,
               walletAddress: input.walletAddress,
               worldVerified: true
             }
@@ -106,7 +114,7 @@ export class WorldService {
 
       await tx.worldNullifier.create({
         data: {
-          nullifier: verified.nullifierHash,
+          nullifier: resolvedNullifierHash,
           verifiedHumanId: verifiedHuman.id
         }
       });

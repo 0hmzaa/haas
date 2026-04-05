@@ -5,12 +5,19 @@ import type {
   WorldVerifyInput,
   WorldVerifyResult
 } from "./world.adapter.js";
+import {
+  extractNullifierFromPayload,
+  extractSessionIdFromPayload,
+  isRecord,
+  readString
+} from "./world.adapter.js";
 
 type WorldVerifyApiResponse = {
   success?: boolean;
   verified?: boolean;
   isValid?: boolean;
   valid?: boolean;
+  status?: string;
   code?: string;
   detail?: string;
   message?: string;
@@ -41,11 +48,39 @@ function getBooleanStatus(payload: WorldVerifyApiResponse): boolean {
     return payload.code.toLowerCase() === "success";
   }
 
+  if (typeof payload.status === "string") {
+    const normalizedStatus = payload.status.toLowerCase();
+    return normalizedStatus === "success" || normalizedStatus === "verified";
+  }
+
   return false;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function resolveSessionId(input: WorldVerifyInput, payload: Record<string, unknown>): string | undefined {
+  const direct =
+    input.sessionId ??
+    extractSessionIdFromPayload(payload) ??
+    (input.walletAddress ? `wallet:${input.walletAddress}` : undefined);
+
+  if (direct) {
+    return direct;
+  }
+
+  const action = readString(payload, "action");
+  const nonce = readString(payload, "nonce");
+
+  if (action && nonce) {
+    return `wid4:${action}:${nonce}`;
+  }
+
+  return undefined;
+}
+
+function resolveNullifierHash(
+  input: WorldVerifyInput,
+  payload: Record<string, unknown>
+): string | undefined {
+  return input.nullifierHash ?? extractNullifierFromPayload(payload);
 }
 
 export class HttpWorldVerificationAdapter implements WorldVerificationAdapter {
@@ -54,7 +89,7 @@ export class HttpWorldVerificationAdapter implements WorldVerificationAdapter {
   async verify(input: WorldVerifyInput): Promise<WorldVerifyResult> {
     if (!this.config.verifyUrl) {
       throw new AppError(
-        "WORLD_ID_VERIFY_URL or WORLD_ID_APP_ID is required in WORLD_ID_MODE=live",
+        "WORLD_ID_VERIFY_URL or WORLD_ID_RP_ID is required in WORLD_ID_MODE=live",
         500
       );
     }
@@ -73,28 +108,22 @@ export class HttpWorldVerificationAdapter implements WorldVerificationAdapter {
       headers.authorization = `Bearer ${this.config.apiKey}`;
     }
 
-    const mergedProofPayload = isRecord(input.proof) ? input.proof : { proof: input.proof };
-    const body = {
-      ...mergedProofPayload,
-      session_id: input.sessionId,
-      nullifier_hash: input.nullifierHash
-    };
-
     let response: Response;
     try {
       response = await fetchFn(this.config.verifyUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify(input.proofPayload),
         signal: signalTimeout
       });
     } catch {
       throw new AppError("World verification provider is unreachable", 502);
     }
 
-    let payload: WorldVerifyApiResponse = {};
+    let payload: Record<string, unknown> = {};
     try {
-      payload = (await response.json()) as WorldVerifyApiResponse;
+      const parsed = await response.json();
+      payload = isRecord(parsed) ? parsed : {};
     } catch {
       payload = {};
     }
@@ -103,26 +132,22 @@ export class HttpWorldVerificationAdapter implements WorldVerificationAdapter {
       throw new AppError("World verification provider failed", 502);
     }
 
-    const responseSessionId =
-      typeof payload.session_id === "string"
-        ? payload.session_id
-        : typeof payload.sessionId === "string"
-          ? payload.sessionId
-          : input.sessionId;
-    const responseNullifierHash =
-      typeof payload.nullifier_hash === "string"
-        ? payload.nullifier_hash
-        : typeof payload.nullifierHash === "string"
-          ? payload.nullifierHash
-          : input.nullifierHash;
+    const verificationPayload = {
+      ...input.proofPayload,
+      ...payload
+    };
+    const responseSessionId = resolveSessionId(input, verificationPayload);
+    const responseNullifierHash = resolveNullifierHash(input, verificationPayload);
 
-    const statusIsValid = getBooleanStatus(payload);
-    const idsMatch =
-      responseSessionId === input.sessionId &&
-      responseNullifierHash === input.nullifierHash;
+    const statusIsValid = getBooleanStatus(payload as WorldVerifyApiResponse);
+    const isValid = response.ok && statusIsValid;
+
+    if (isValid && (!responseSessionId || !responseNullifierHash)) {
+      throw new AppError("World verification response missing session or nullifier", 400);
+    }
 
     return {
-      isValid: response.ok && statusIsValid && idsMatch,
+      isValid,
       sessionId: responseSessionId,
       nullifierHash: responseNullifierHash
     };

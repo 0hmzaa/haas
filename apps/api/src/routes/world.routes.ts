@@ -1,7 +1,12 @@
 import { Router } from "express";
+import { signRequest } from "@worldcoin/idkit-core/signing";
 import { AppError } from "../lib/app-error.js";
 import { WorldService } from "../services/world/world.service.js";
-import type { WorldVerificationAdapter } from "../services/world/world.adapter.js";
+import {
+  isRecord,
+  readString,
+  type WorldVerificationAdapter
+} from "../services/world/world.adapter.js";
 import { MockWorldVerificationAdapter } from "../services/world/world.mock.adapter.js";
 import { HttpWorldVerificationAdapter } from "../services/world/world.http.adapter.js";
 import { getWorldConfig } from "../config/world.config.js";
@@ -20,6 +25,34 @@ function createWorldVerificationAdapter(): WorldVerificationAdapter {
 
 const worldService = new WorldService(createWorldVerificationAdapter());
 
+function extractProofPayload(body: Record<string, unknown>): Record<string, unknown> {
+  if (isRecord(body.result)) {
+    return body.result;
+  }
+
+  if (isRecord(body.proof)) {
+    return body.proof;
+  }
+
+  if ("proof" in body) {
+    return { proof: body.proof };
+  }
+
+  if (typeof body.protocol_version === "string" || Array.isArray(body.responses)) {
+    const payload = { ...body };
+    delete payload.walletAddress;
+    delete payload.session_id;
+    delete payload.sessionId;
+    delete payload.nullifier_hash;
+    delete payload.nullifierHash;
+    delete payload.proof;
+    delete payload.result;
+    return payload;
+  }
+
+  throw new AppError("World proof payload is required", 400);
+}
+
 router.get("/identity", async (req, res, next) => {
   try {
     const walletAddress = req.query.walletAddress;
@@ -34,26 +67,68 @@ router.get("/identity", async (req, res, next) => {
   }
 });
 
+router.get("/rp-signature", async (_req, res, next) => {
+  try {
+    const config = getWorldConfig();
+
+    if (config.mode !== "live") {
+      res.status(200).json({ mode: "mock" as const });
+      return;
+    }
+
+    if (!config.appId) {
+      throw new AppError("WORLD_ID_APP_ID is required in WORLD_ID_MODE=live", 500);
+    }
+
+    if (!config.rpId || !config.rpSigningKey) {
+      throw new AppError(
+        "WORLD_ID_RP_ID and WORLD_ID_RP_SIGNING_KEY are required in WORLD_ID_MODE=live",
+        500
+      );
+    }
+
+    if (config.workerOnboardingAction.length === 0) {
+      throw new AppError("WORLD_ID_ACTION_WORKER_ONBOARDING cannot be empty", 500);
+    }
+
+    const signature = signRequest({
+      signingKeyHex: config.rpSigningKey,
+      action: config.workerOnboardingAction,
+      ttl: config.signatureTtlSeconds
+    });
+
+    res.status(200).json({
+      mode: "live" as const,
+      appId: config.appId,
+      action: config.workerOnboardingAction,
+      allowLegacyProofs: false,
+      rpContext: {
+        rp_id: config.rpId,
+        nonce: signature.nonce,
+        created_at: signature.createdAt,
+        expires_at: signature.expiresAt,
+        signature: signature.sig
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/verify", async (req, res, next) => {
   try {
-    const sessionId = req.body?.session_id;
-    const nullifierHash = req.body?.nullifier_hash;
-
-    if (typeof sessionId !== "string" || sessionId.length === 0) {
-      throw new AppError("session_id is required", 400);
+    if (!isRecord(req.body)) {
+      throw new AppError("World verification payload must be a JSON object", 400);
     }
+    const body = req.body;
 
-    if (typeof nullifierHash !== "string" || nullifierHash.length === 0) {
-      throw new AppError("nullifier_hash is required", 400);
-    }
-
-    const walletAddress =
-      typeof req.body?.walletAddress === "string"
-        ? req.body.walletAddress
-        : undefined;
+    const sessionId = readString(body, "session_id", "sessionId");
+    const nullifierHash = readString(body, "nullifier_hash", "nullifierHash");
+    const walletAddress = readString(body, "walletAddress");
+    const proofPayload = extractProofPayload(body);
 
     const result = await worldService.verifyAndUpsert({
-      proof: req.body?.proof,
+      proofPayload,
       sessionId,
       nullifierHash,
       walletAddress
