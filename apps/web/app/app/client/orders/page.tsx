@@ -33,7 +33,7 @@ export default function ClientOrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const visibleOrders = session?.walletAddress ? orders : [];
+  const visibleOrders = orders;
 
   useEffect(() => {
     if (!session?.walletAddress) {
@@ -63,6 +63,17 @@ export default function ClientOrdersPage() {
     return () => { cancelled = true; };
   }, [session?.walletAddress, statusFilter]);
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer
+        title="Client Orders"
+        subtitle="Create, fund, review, and settle direct-booking orders."
+      >
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer
       title="Client Orders"
@@ -73,31 +84,27 @@ export default function ClientOrdersPage() {
         </Link>
       }
     >
-      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
-
-      {session?.walletAddress ? (
-        <Card variant="flat">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <p className="text-xs font-bold text-[var(--color-muted)]">Client wallet</p>
-              <p className="mt-1 font-mono text-sm font-bold">{session.walletAddress}</p>
-              <p className="mt-1 text-xs text-[var(--color-muted)]">
-                Namespace: {deriveClientNamespace(session.walletAddress)}
-              </p>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-[var(--color-muted)]">Status filter</label>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="mt-1 w-full">
-                {ORDER_STATUS_OPTIONS.map((status) => (
-                  <option key={status || "all"} value={status}>
-                    {status ? status.replace(/_/g, " ") : "All statuses"}
-                  </option>
-                ))}
-              </select>
-            </div>
+      <Card variant="flat">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold text-[var(--color-muted)]">Client wallet</p>
+            <p className="mt-1 font-mono text-sm font-bold">{session.walletAddress}</p>
+            <p className="mt-1 text-xs text-[var(--color-muted)]">
+              Namespace: {deriveClientNamespace(session.walletAddress)}
+            </p>
           </div>
-        </Card>
-      ) : null}
+          <div>
+            <label className="text-xs font-bold text-[var(--color-muted)]">Status filter</label>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="mt-1 w-full">
+              {ORDER_STATUS_OPTIONS.map((status) => (
+                <option key={status || "all"} value={status}>
+                  {status ? status.replace(/_/g, " ") : "All statuses"}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </Card>
 
       {error ? (
         <Card variant="flat">
@@ -112,7 +119,7 @@ export default function ClientOrdersPage() {
         </div>
       ) : null}
 
-      {!loading && session?.walletAddress && visibleOrders.length === 0 ? (
+      {!loading && visibleOrders.length === 0 ? (
         <Card variant="flat">
           <div className="py-6 text-center">
             <p className="text-sm font-bold text-[var(--color-muted)]">No orders found</p>

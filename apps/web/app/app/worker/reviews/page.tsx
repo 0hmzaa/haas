@@ -17,7 +17,7 @@ export default function WorkerReviewsPage() {
   const [reputation, setReputation] = useState<ReputationReviewerResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const visibleOrders = session?.verifiedHumanId ? orders : [];
+  const visibleOrders = orders;
 
   useEffect(() => {
     const reviewerId = session?.verifiedHumanId;
@@ -48,11 +48,17 @@ export default function WorkerReviewsPage() {
     return () => { cancelled = true; };
   }, [session?.verifiedHumanId]);
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer title="Review Queue" subtitle="Dispute cases assigned to you as reviewer.">
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer title="Review Queue" subtitle="Dispute cases assigned to you as reviewer.">
-      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
-
-      {!session?.verifiedHumanId && session?.walletAddress ? (
+      {!session?.verifiedHumanId ? (
         <Card variant="flat">
           <p className="text-sm font-semibold text-[var(--color-muted)]">
             Reviewer identity is not linked yet. Complete World verification in onboarding flow.

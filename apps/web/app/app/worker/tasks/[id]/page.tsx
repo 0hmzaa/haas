@@ -110,12 +110,16 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
     }
   };
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer title="Task Detail" subtitle={orderId ? `Order ${orderId}` : "Order"}>
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer title="Task Detail" subtitle={orderId ? `Order ${orderId}` : "Order"}>
-      {!session?.walletAddress ? (
-        <WalletSessionPanel required />
-      ) : null}
-
       {error ? (
         <Card variant="flat">
           <p className="text-sm font-semibold text-[var(--color-danger)]">{error}</p>
@@ -127,9 +131,9 @@ export default function WorkerTaskDetailPage({ params }: WorkerTaskDetailPagePro
         </Card>
       ) : null}
 
-      {loading && session?.walletAddress ? <SkeletonCard /> : null}
+      {loading ? <SkeletonCard /> : null}
 
-      {!loading && session?.walletAddress && order ? (
+      {!loading && order ? (
         <>
           <Card variant="flat">
             <OrderTimeline status={order.status} />

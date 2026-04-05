@@ -46,6 +46,21 @@ export type SubmitPaymentInput = {
   payerAccount?: string;
 };
 
+export type SubmitPaymentResult = {
+  submitted: boolean;
+  funded: boolean;
+  status: "ALREADY_FUNDED" | "FACILITATOR_REJECTED" | "FUNDED";
+  reason: string | null;
+  idempotent?: boolean;
+  orderId: string;
+  x402PaymentId: string;
+  fundingStatus?: string;
+  orderStatus?: string;
+  hederaTxId?: string | null;
+  facilitatorId?: string | null;
+  hederaTxVerified?: boolean;
+};
+
 export type FundingWebhookInput = {
   x402PaymentId?: string;
   orderId?: string;
@@ -226,7 +241,7 @@ export class PaymentsService {
     });
   }
 
-  async submitPaymentViaFacilitator(input: SubmitPaymentInput) {
+  async submitPaymentViaFacilitator(input: SubmitPaymentInput): Promise<SubmitPaymentResult> {
     if (!this.facilitatorAdapter.isConfigured()) {
       throw new AppError(
         "Facilitator direct-pay endpoint is not configured. Set X402_FACILITATOR_API_BASE_URL.",
@@ -254,6 +269,9 @@ export class PaymentsService {
     if (funding.status === "CONFIRMED") {
       return {
         submitted: false,
+        funded: true,
+        status: "ALREADY_FUNDED",
+        reason: null,
         idempotent: true,
         orderId: funding.orderId,
         x402PaymentId: funding.x402PaymentId,
@@ -292,6 +310,8 @@ export class PaymentsService {
       return {
         submitted: true,
         funded: false,
+        status: "FACILITATOR_REJECTED",
+        reason: "Facilitator verification/settlement rejected the payment",
         orderId: funding.orderId,
         x402PaymentId: funding.x402PaymentId,
         facilitatorId: facilitatorResponse.facilitatorId ?? null
@@ -332,6 +352,9 @@ export class PaymentsService {
     return {
       submitted: true,
       funded: true,
+      status: "FUNDED",
+      reason: null,
+      x402PaymentId: funding.x402PaymentId,
       hederaTxVerified,
       ...processed
     };

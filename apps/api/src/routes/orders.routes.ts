@@ -200,14 +200,24 @@ router.post("/:id/pay/submit", async (req, res, next) => {
       throw new AppError("x402PaymentId is required", 400);
     }
 
-    if (!("signedPayload" in (req.body ?? {}))) {
-      throw new AppError("signedPayload is required", 400);
+    const signedPayload =
+      "signedPayload" in (req.body ?? {})
+        ? req.body.signedPayload
+        : typeof req.body?.paymentHeader === "string" && req.body.paymentHeader.length > 0
+          ? { paymentHeader: req.body.paymentHeader }
+          : undefined;
+
+    if (signedPayload === undefined) {
+      throw new AppError(
+        "signedPayload is required (or pass paymentHeader for compatibility)",
+        400
+      );
     }
 
     const result = await paymentsService.submitPaymentViaFacilitator({
       orderId: req.params.id,
       x402PaymentId: req.body.x402PaymentId,
-      signedPayload: req.body.signedPayload,
+      signedPayload,
       signature: typeof req.body?.signature === "string" ? req.body.signature : undefined,
       payerAccount:
         typeof req.body?.payerAccount === "string" ? req.body.payerAccount : undefined
@@ -263,7 +273,12 @@ router.post("/:id/approve", async (req, res, next) => {
   try {
     const actorId =
       typeof req.body?.actorId === "string" ? req.body.actorId : undefined;
-    const result = await settlementService.approveOrder(req.params.id, actorId);
+    const clientAccountId =
+      typeof req.body?.clientAccountId === "string" ? req.body.clientAccountId : undefined;
+    const result = await settlementService.approveOrder(req.params.id, {
+      actorId,
+      clientAccountId
+    });
     res.status(200).json(result);
   } catch (error) {
     next(error);
@@ -290,7 +305,11 @@ router.post("/:id/dispute", async (req, res, next) => {
         typeof req.body?.workerStatement === "string"
           ? req.body.workerStatement
           : undefined,
-      actorId: typeof req.body?.actorId === "string" ? req.body.actorId : undefined
+      actorId: typeof req.body?.actorId === "string" ? req.body.actorId : undefined,
+      clientAccountId:
+        typeof req.body?.clientAccountId === "string"
+          ? req.body.clientAccountId
+          : undefined
     });
 
     res.status(201).json(dispute);

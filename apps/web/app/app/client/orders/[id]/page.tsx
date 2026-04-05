@@ -94,7 +94,10 @@ export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageP
       setActing(true);
       setError(null);
       setMessage(null);
-      const result = await approveOrder(orderId, deriveClientNamespace(session.walletAddress));
+      const result = await approveOrder(orderId, {
+        actorId: deriveClientNamespace(session.walletAddress),
+        clientAccountId: session.walletAddress,
+      });
       await refresh(orderId);
       setMessage(result.releaseTxId ? `Approved and released: ${result.releaseTxId}` : "Order approved");
     } catch (reason) {
@@ -115,6 +118,7 @@ export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageP
         reasonCode,
         clientStatement: clientStatement.trim(),
         actorId: deriveClientNamespace(session.walletAddress),
+        clientAccountId: session.walletAddress,
       });
       await refresh(orderId);
       setMessage(`Dispute opened. Reviewers: ${d.assignedReviewerIds.join(", ")}`);
@@ -125,10 +129,16 @@ export default function ClientOrderDetailPage({ params }: ClientOrderDetailPageP
     }
   };
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer title="Order Detail" subtitle={orderId ? `Order ${orderId}` : "Order"}>
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer title="Order Detail" subtitle={orderId ? `Order ${orderId}` : "Order"}>
-      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
-
       {error ? (
         <Card variant="flat"><p className="text-sm font-semibold text-[var(--color-danger)]">{error}</p></Card>
       ) : null}

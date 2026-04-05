@@ -87,7 +87,7 @@ export async function createWorker(input: {
   skills: string[];
   baseRate: string;
   availabilityStatus: string;
-  acceptedProofTypes: string[];
+  acceptedProofTypes?: string[];
 }) {
   return request<WorkerProfile>("/api/workers", {
     method: "POST",
@@ -205,7 +205,11 @@ export async function submitPayment(orderId: string, input: {
   payerAccount?: string;
 }) {
   return request<{
+    submitted: boolean;
     funded: boolean;
+    status: "ALREADY_FUNDED" | "FACILITATOR_REJECTED" | "FUNDED";
+    reason: string | null;
+    x402PaymentId?: string;
     hederaTxId?: string;
     orderStatus?: string;
   }>(`/api/orders/${orderId}/pay/submit`, {
@@ -243,10 +247,13 @@ export async function getProofs(orderId: string) {
   return request<ProofListResponse>(`/api/orders/${orderId}/proof`);
 }
 
-export async function approveOrder(orderId: string, actorId: string) {
+export async function approveOrder(orderId: string, input: {
+  actorId: string;
+  clientAccountId: string;
+}) {
   return request<{ orderStatus: string; releaseTxId: string }>(`/api/orders/${orderId}/approve`, {
     method: "POST",
-    body: JSON.stringify({ actorId })
+    body: JSON.stringify(input)
   });
 }
 
@@ -254,6 +261,7 @@ export async function openDispute(orderId: string, input: {
   reasonCode: string;
   clientStatement: string;
   actorId?: string;
+  clientAccountId?: string;
 }) {
   return request<{
     id: string;

@@ -188,7 +188,7 @@ curl -X POST http://localhost:4000/api/orders/{id}/pay/submit \\
   -H "Content-Type: application/json" \\
   -d '{
     "x402PaymentId": "payment-id",
-    "signedPayload": { "x402": "signed-data" },
+    "signedPayload": { "paymentHeader": "base64-x-payment-header" },
     "payerAccount": "0.0.12345"
   }'
 
@@ -198,7 +198,7 @@ curl http://localhost:4000/api/orders/{id}
 # 5. Approve order (release payment)
 curl -X POST http://localhost:4000/api/orders/{id}/approve \\
   -H "Content-Type: application/json" \\
-  -d '{ "actorId": "client:0_0_12345" }'`}
+  -d '{ "actorId": "client:0_0_12345", "clientAccountId": "0.0.12345" }'`}
         />
       </section>
 
@@ -247,7 +247,8 @@ curl -X POST http://localhost:4000/api/orders/{id}/dispute \\
   -d '{
     "reasonCode": "QUALITY_ISSUE",
     "clientStatement": "Proof does not match instructions",
-    "actorId": "client:0_0_12345"
+    "actorId": "client:0_0_12345",
+    "clientAccountId": "0.0.12345"
   }'
 
 # Get dispute details

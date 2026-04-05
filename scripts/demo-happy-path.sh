@@ -164,7 +164,7 @@ log "Proof submitted"
 
 case "$MODE" in
   approve)
-    post_json "/api/orders/${ORDER_ID}/approve" '{"actorId":"client-demo"}' >/dev/null
+    post_json "/api/orders/${ORDER_ID}/approve" "{\"actorId\":\"client-demo\",\"clientAccountId\":\"${DEMO_CLIENT_ACCOUNT_ID}\"}" >/dev/null
     log "Order approved"
     ;;
   dispute)
@@ -178,7 +178,7 @@ case "$MODE" in
       REVIEWER_IDS+=("${reviewer_verified_human_id}")
     done
 
-    DISPUTE_RESP="$(post_json "/api/orders/${ORDER_ID}/dispute" '{"reasonCode":"PROOF_INSUFFICIENT","clientStatement":"Need reviewer decision"}')"
+    DISPUTE_RESP="$(post_json "/api/orders/${ORDER_ID}/dispute" "{\"reasonCode\":\"PROOF_INSUFFICIENT\",\"clientStatement\":\"Need reviewer decision\",\"actorId\":\"client-demo\",\"clientAccountId\":\"${DEMO_CLIENT_ACCOUNT_ID}\"}")"
     ASSIGNED_1="$(printf '%s' "$DISPUTE_RESP" | json_get 'assignedReviewerIds.0')"
     ASSIGNED_2="$(printf '%s' "$DISPUTE_RESP" | json_get 'assignedReviewerIds.1')"
 

@@ -40,13 +40,19 @@ export default function WorkerTasksPage() {
     return () => { cancelled = true; };
   }, [session?.workerId]);
 
-  const visibleOrders = session?.workerId ? orders : [];
+  const visibleOrders = orders;
+
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer title="Worker Tasks" subtitle="Track assigned work and submit proof artifacts.">
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer title="Worker Tasks" subtitle="Track assigned work and submit proof artifacts.">
-      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
-
-      {!session?.workerId && session?.walletAddress ? (
+      {!session?.workerId ? (
         <Card variant="flat">
           <p className="text-sm font-semibold text-[var(--color-muted)]">
             No worker linked to this wallet. Complete onboarding first.

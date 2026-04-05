@@ -110,16 +110,22 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
     }
   };
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer title="Review Case" subtitle={orderId ? `Order ${orderId}` : "Dispute review"}>
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer title="Review Case" subtitle={orderId ? `Order ${orderId}` : "Dispute review"}>
-      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
-
       {error ? <Card variant="flat"><p className="text-sm font-semibold text-[var(--color-danger)]">{error}</p></Card> : null}
       {message ? <Card variant="flat"><p className="text-sm font-semibold text-[var(--color-success)]">{message}</p></Card> : null}
 
-      {loading && session?.walletAddress ? <SkeletonCard /> : null}
+      {loading ? <SkeletonCard /> : null}
 
-      {!loading && session?.walletAddress && order ? (
+      {!loading && order ? (
         <>
           <Card>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -179,7 +185,7 @@ export default function ReviewOrderPage({ params }: ReviewOrderPageProps) {
             </div>
           ) : null}
 
-          {!reviewerAssigned && session?.walletAddress ? (
+          {!reviewerAssigned ? (
             <Card variant="flat">
               <p className="text-xs font-semibold text-[var(--color-warning)]">
                 Your reviewer identity is not assigned to this case.

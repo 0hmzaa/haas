@@ -49,6 +49,15 @@ function getMajorityResolution(
     return "SPLIT_PAYMENT";
   }
 
+  if (
+    votes.length >= 3 &&
+    counts.RELEASE_TO_WORKER === 1 &&
+    counts.REFUND_CLIENT === 1 &&
+    counts.SPLIT_PAYMENT === 1
+  ) {
+    return "SPLIT_PAYMENT";
+  }
+
   return null;
 }
 
@@ -58,6 +67,25 @@ export class DisputesService {
   private readonly hcsAuditService = new HcsAuditService();
   private readonly reputationService = new ReputationService();
   private readonly hederaConfig = getHederaConfig();
+
+  private assertClientOwnership(order: {
+    clientId: string;
+    clientAccountId: string | null;
+  }, input: { actorId?: string; clientAccountId?: string }): void {
+    if (order.clientAccountId) {
+      if (input.clientAccountId !== order.clientAccountId) {
+        throw new AppError(
+          "Only the order client account can open a dispute",
+          403
+        );
+      }
+      return;
+    }
+
+    if (!input.actorId || input.actorId !== order.clientId) {
+      throw new AppError("Only the order client can open a dispute", 403);
+    }
+  }
 
   private resolveLocalSettlementTxId(resolution: DisputeResolution): string {
     return `${resolution.toLowerCase()}_${randomUUID()}`;
@@ -176,6 +204,7 @@ export class DisputesService {
       clientStatement: string;
       workerStatement?: string;
       actorId?: string;
+      clientAccountId?: string;
     }
   ) {
     const order = await prisma.order.findUnique({
@@ -185,6 +214,8 @@ export class DisputesService {
     if (!order) {
       throw new AppError("Order not found", 404);
     }
+
+    this.assertClientOwnership(order, input);
 
     if (order.status !== "REVIEW_WINDOW") {
       throw new AppError("Order can only be disputed from REVIEW_WINDOW", 409);

@@ -285,7 +285,7 @@ curl -fsS -X POST "${API_BASE_URL}/api/orders/${ORDER_ID}/proof" \
 rm -f "${TMP_FILE}"
 log "Proof submitted"
 
-post_json "/api/orders/${ORDER_ID}/approve" "{\"actorId\":\"${REAL_CLIENT_ID}\"}" >/dev/null
+post_json "/api/orders/${ORDER_ID}/approve" "{\"actorId\":\"${REAL_CLIENT_ID}\",\"clientAccountId\":\"${REAL_CLIENT_ACCOUNT}\"}" >/dev/null
 log "Order approved"
 
 ORDER_FINAL="$(curl -fsS "${API_BASE_URL}/api/orders/${ORDER_ID}")"

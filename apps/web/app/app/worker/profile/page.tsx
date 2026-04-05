@@ -61,10 +61,16 @@ export default function WorkerProfilePage() {
     }
   };
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer title="Worker Profile" subtitle="Manage profile and availability.">
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer title="Worker Profile" subtitle="Manage profile and availability.">
-      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
-
       {error ? (
         <Card variant="flat">
           <p className="text-sm font-semibold text-[var(--color-danger)]">{error}</p>
@@ -76,7 +82,7 @@ export default function WorkerProfilePage() {
         </Card>
       ) : null}
 
-      {!session?.workerId && session?.walletAddress ? (
+      {!session?.workerId ? (
         <Card variant="flat">
           <p className="text-sm font-semibold text-[var(--color-muted)]">
             No worker linked to this wallet yet. Complete onboarding first.

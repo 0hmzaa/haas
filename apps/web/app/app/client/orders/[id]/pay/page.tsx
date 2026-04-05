@@ -31,12 +31,29 @@ type RequirementState = {
   asset: string;
 } | null;
 
+function parseSignedPayloadInput(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new Error("Signed payload is required");
+  }
+
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return {
+      paymentHeader: trimmed
+    };
+  }
+}
+
 export default function PayOrderPage({ params }: PayOrderPageProps) {
   const { session } = useSession();
   const [orderId, setOrderId] = useState("");
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [requirement, setRequirement] = useState<RequirementState>(null);
-  const [signedPayloadText, setSignedPayloadText] = useState('{"x402": "signed-payload"}');
+  const [signedPayloadText, setSignedPayloadText] = useState(
+    '{"paymentHeader":"<paste-x-payment-header-here>"}'
+  );
   const [payerAccount, setPayerAccount] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -112,7 +129,7 @@ export default function PayOrderPage({ params }: PayOrderPageProps) {
       if (!orderId) return;
       if (!requirement?.x402PaymentId) throw new Error("Create payment requirement first");
 
-      const signedPayload = JSON.parse(signedPayloadText);
+      const signedPayload = parseSignedPayloadInput(signedPayloadText);
 
       setSubmitting(true);
       setError(null);
@@ -127,11 +144,22 @@ export default function PayOrderPage({ params }: PayOrderPageProps) {
       const refreshedOrder = await getOrderById(orderId);
       setOrder(refreshedOrder);
 
-      if (result.hederaTxId) {
+      if (result.funded && result.hederaTxId) {
         setMessage(`Payment submitted and funded on Hedera: ${result.hederaTxId}`);
-      } else {
-        setMessage("Payment submitted. Waiting for final Hedera tx metadata.");
+        return;
       }
+
+      if (result.funded) {
+        setMessage(
+          `Payment funded (${result.status}). Waiting for final Hedera tx metadata.`
+        );
+        return;
+      }
+
+      throw new Error(
+        result.reason ??
+          `Payment was not funded (status: ${result.status}). Check signed payload/header and try again.`
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to submit payment");
     } finally {
@@ -139,10 +167,16 @@ export default function PayOrderPage({ params }: PayOrderPageProps) {
     }
   };
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer title="Fund Order" subtitle={orderId ? `Order ${orderId}` : "Order payment"}>
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer title="Fund Order" subtitle={orderId ? `Order ${orderId}` : "Order payment"}>
-      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
-
       <Card variant="flat">
         <Stepper steps={["Order Summary", "Payment Requirement", "Submit Payment"]} currentStep={currentStep} />
       </Card>
@@ -272,11 +306,11 @@ export default function PayOrderPage({ params }: PayOrderPageProps) {
             />
           </div>
           <div>
-            <label className="text-xs font-bold text-[var(--color-muted)]">Signed Payload (JSON)</label>
+            <label className="text-xs font-bold text-[var(--color-muted)]">Signed Payload / Payment Header</label>
             <textarea
               value={signedPayloadText}
               onChange={(e) => setSignedPayloadText(e.target.value)}
-              placeholder="Signed payload JSON"
+              placeholder='{"paymentHeader":"..."} or raw x-payment header'
               className="mt-1 min-h-32 w-full font-mono text-xs"
             />
           </div>

@@ -72,8 +72,7 @@ export default function WorkerOnboardingPage() {
           .map((s) => s.trim())
           .filter((s) => s.length > 0),
         baseRate: baseRate.trim(),
-        availabilityStatus: "AVAILABLE",
-        acceptedProofTypes: ["photo", "text"],
+        availabilityStatus: "AVAILABLE"
       });
 
       saveSession({
@@ -90,6 +89,17 @@ export default function WorkerOnboardingPage() {
     }
   };
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer
+        title="Worker Onboarding"
+        subtitle="Connect wallet, verify identity, and create your worker profile."
+      >
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer
       title="Worker Onboarding"
@@ -101,11 +111,6 @@ export default function WorkerOnboardingPage() {
           currentStep={currentStep}
         />
       </Card>
-
-      {/* Step 0: Wallet */}
-      {currentStep === 0 ? (
-        <WalletSessionPanel required />
-      ) : null}
 
       {/* Step 1: Identity (auto-verified on submit) */}
       {currentStep === 1 ? (

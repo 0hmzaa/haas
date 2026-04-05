@@ -100,10 +100,16 @@ export default function CreateOrderPage() {
     }
   };
 
+  if (!session?.walletAddress) {
+    return (
+      <PageContainer title="Create Order" subtitle="Directly book one worker for one scoped real-world task.">
+        <WalletSessionPanel required />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer title="Create Order" subtitle="Directly book one worker for one scoped real-world task.">
-      {!session?.walletAddress ? <WalletSessionPanel required /> : null}
-
       <Card variant="flat">
         <Stepper steps={["Select Worker", "Task Details", "Review & Submit"]} currentStep={currentStep} />
       </Card>

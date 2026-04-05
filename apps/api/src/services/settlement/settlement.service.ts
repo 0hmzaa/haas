@@ -16,6 +16,25 @@ export class SettlementService {
   private readonly reputationService = new ReputationService();
   private readonly hederaConfig = getHederaConfig();
 
+  private assertClientOwnership(order: {
+    clientId: string;
+    clientAccountId: string | null;
+  }, input: { actorId?: string; clientAccountId?: string }): void {
+    if (order.clientAccountId) {
+      if (input.clientAccountId !== order.clientAccountId) {
+        throw new AppError(
+          "Only the order client account can approve this order",
+          403
+        );
+      }
+      return;
+    }
+
+    if (!input.actorId || input.actorId !== order.clientId) {
+      throw new AppError("Only the order client can approve this order", 403);
+    }
+  }
+
   private async executeReleaseTransfer(order: {
     id: string;
     currency: string;
@@ -78,12 +97,17 @@ export class SettlementService {
     return transfer.txId;
   }
 
-  async approveOrder(orderId: string, actorId?: string) {
+  async approveOrder(
+    orderId: string,
+    input: { actorId?: string; clientAccountId?: string }
+  ) {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
 
     if (!order) {
       throw new AppError("Order not found", 404);
     }
+
+    this.assertClientOwnership(order, input);
 
     if (order.status !== "REVIEW_WINDOW") {
       throw new AppError("Order can only be approved from REVIEW_WINDOW", 409);
@@ -138,7 +162,7 @@ export class SettlementService {
     await this.hcsAuditService.publishEvent({
       eventType: "order.approved",
       orderId,
-      actorId,
+      actorId: input.actorId,
       txId: releaseTxId,
       payload: {
         cancelledScheduleId: cancelledSchedule?.scheduleId ?? null,
