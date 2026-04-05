@@ -52,8 +52,22 @@ body {
 }
 
 .halftone-hero {
-  background-image: radial-gradient(circle, rgba(10, 10, 10, 0.08) 2px, transparent 2px);
-  background-size: 14px 14px;
+  background-image: url("/hero-bg.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: url(#halftone-filter) contrast(1.2);
+}
+
+.halftone-hero-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(250, 250, 248, 0.88) 0%,
+    rgba(250, 250, 248, 0.72) 40%,
+    rgba(250, 250, 248, 0.45) 100%
+  );
 }
 
 .halftone-band {

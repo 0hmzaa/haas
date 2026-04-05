@@ -59,16 +59,32 @@ const USE_CASES = [
 export default function HomePage() {
   return (
     <main className="flex-1">
+      {/* ── SVG Halftone Filter (hidden) ─────────── */}
+      <svg width="0" height="0" className="absolute">
+        <filter id="halftone-filter">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="0.8" result="blur" />
+          <feComponentTransfer in="blur" result="discrete">
+            <feFuncR type="discrete" tableValues="0 0.15 0.3 0.5 0.7 0.85 1" />
+            <feFuncG type="discrete" tableValues="0 0.15 0.3 0.5 0.7 0.85 1" />
+            <feFuncB type="discrete" tableValues="0 0.15 0.3 0.5 0.7 0.85 1" />
+          </feComponentTransfer>
+        </filter>
+      </svg>
+
       {/* ── Hero ──────────────────────────────────── */}
       <section className="relative overflow-hidden border-b-2 border-[var(--color-border-strong)]">
-        <div className="halftone-hero absolute inset-0 opacity-60" />
+        <div className="halftone-hero absolute inset-0" />
+        <div className="halftone-hero-overlay" />
         <div className="relative mx-auto max-w-7xl px-4 py-24 md:py-36">
           <p className="font-mono text-xs font-bold uppercase tracking-widest text-[var(--color-muted)]">
             World ID + Hedera + x402
           </p>
-          <h1 className="mt-4 max-w-3xl text-5xl font-black leading-[1.05] tracking-tight text-[var(--color-text)] md:text-7xl">
-            The Verified Human Execution Layer
+          <h1 className="mt-4 max-w-4xl text-6xl font-black leading-[1.0] tracking-tight text-[var(--color-text)] md:text-8xl">
+            Human as a Service
           </h1>
+          <p className="mt-4 max-w-2xl text-xl font-bold tracking-tight text-[var(--color-text)] md:text-2xl opacity-80">
+            The Verified Human Execution Layer
+          </p>
           <p className="mt-6 max-w-xl text-lg text-[var(--color-muted)]">
             Book one verified human for one real-world task. Lock payment.
             Receive proof. Settle on Hedera.
